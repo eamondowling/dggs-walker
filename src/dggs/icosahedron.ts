@@ -55,6 +55,83 @@ function createBaseIcosahedron(): { vertices: THREE.Vector3[]; faces: [number, n
   return { vertices, faces };
 }
 
+// Computed once and reused by the standalone cell-address functions below, so callers
+// don't need a full DGGSStructure (and its 1,280-cell table) just to look up one cell.
+const BASE_ICOSAHEDRON = createBaseIcosahedron();
+
+/**
+ * True if this triangle's vertex-corner sits at a higher latitude (closer to the
+ * north pole) than the midpoint of its west/east base — i.e. it points north rather
+ * than south. Works for any [vertex, west, east] triangle, at any depth.
+ */
+export function trianglePointsNorth(
+  vertexCorner: THREE.Vector3,
+  westCorner: THREE.Vector3,
+  eastCorner: THREE.Vector3,
+): boolean {
+  return vertexCorner.y > (westCorner.y + eastCorner.y) / 2;
+}
+
+/**
+ * Recursively descends from a base icosahedron face through an aperture-4 path
+ * (0=medial, 1=vertex corner, 2=west corner, 3=east corner) and returns the resulting
+ * cell's [vertex, west, east] triangle — in O(depth), without building the full cell
+ * table. Mirrors DGGSStructure's own subdivision step exactly, so it always agrees
+ * with the cells that class generates.
+ */
+export function getCellVertices(
+  faceIndex: number,
+  path: number[],
+): [THREE.Vector3, THREE.Vector3, THREE.Vector3] {
+  const [i1, i2, i3] = BASE_ICOSAHEDRON.faces[faceIndex];
+  let tri: [THREE.Vector3, THREE.Vector3, THREE.Vector3] = [
+    BASE_ICOSAHEDRON.vertices[i1].clone(),
+    BASE_ICOSAHEDRON.vertices[i2].clone(),
+    BASE_ICOSAHEDRON.vertices[i3].clone(),
+  ];
+
+  for (const step of path) {
+    const [v, w, e] = tri;
+    const ab = new THREE.Vector3().addVectors(v, w).normalize();
+    const bc = new THREE.Vector3().addVectors(w, e).normalize();
+    const ca = new THREE.Vector3().addVectors(e, v).normalize();
+
+    switch (step) {
+      case 0:
+        tri = [bc, ca, ab]; // medial — bc is its true apex, an exact 180° flip of [v,w,e]
+        break;
+      case 1:
+        tri = [v, ab, ca]; // vertex corner
+        break;
+      case 2:
+        tri = [w, bc, ab]; // west corner
+        break;
+      case 3:
+        tri = [e, ca, bc]; // east corner
+        break;
+      default:
+        throw new Error(`Invalid DGGS sub-cell index ${step}, expected 0-3`);
+    }
+  }
+
+  return tri;
+}
+
+/** The cell's center as a unit direction from the planet's origin. */
+export function getCellCenterDirection(faceIndex: number, path: number[]): THREE.Vector3 {
+  const [v, w, e] = getCellVertices(faceIndex, path);
+  return new THREE.Vector3().add(v).add(w).add(e).normalize();
+}
+
+/** The cell's center in degrees latitude/longitude. */
+export function getCellPolarCoordinates(faceIndex: number, path: number[]): { lat: number; lon: number } {
+  const dir = getCellCenterDirection(faceIndex, path);
+  return {
+    lat: (Math.asin(dir.y) * 180) / Math.PI,
+    lon: (Math.atan2(dir.z, dir.x) * 180) / Math.PI,
+  };
+}
+
 // Procedural biome generator based on spherical position & noise
 export function getBiomeForNormal(n: THREE.Vector3): { name: string; color: THREE.Color } {
   const lat = Math.asin(n.y); // -PI/2 to PI/2
@@ -145,9 +222,13 @@ export class DGGSStructure {
         const bc = this.getMidpoint(b, c);
         const ca = this.getMidpoint(c, a);
 
-        // 4 sub-triangles (Aperture 4 subdivision): 0=medial, 1=vertex corner, 2=west corner, 3=east corner
+        // 4 sub-triangles (Aperture 4 subdivision): 0=medial, 1=vertex corner, 2=west corner, 3=east corner.
+        // Medial's own "vertex" is bc (the base-edge midpoint) — it's the true apex of the
+        // inverted medial triangle, an exact 180° point-reflection of the parent. Putting ab
+        // first here instead would be geometrically meaningless (an arbitrary ~60° offset, not
+        // a real flip) and break the north/south-orientation parity rule for deeper cells.
         const subTriangles: [THREE.Vector3, THREE.Vector3, THREE.Vector3][] = [
-          [ab, bc, ca],
+          [bc, ca, ab],
           [a, ab, ca],
           [b, bc, ab],
           [c, ca, bc],

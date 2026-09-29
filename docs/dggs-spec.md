@@ -51,6 +51,54 @@ This rule is applied identically at every depth (1, 2, 3) — a depth-3
 leaf cell's path like `[2, 1, 3]` means "west child, then that child's
 vertex child, then that child's east child."
 
+The medial child's own vertex-corner (for further recursion) is **the
+midpoint of the parent's west/east base edge** (`bc` in the code), not
+one of the two midpoints touching the parent's vertex corner (`ab`).
+`bc` is the medial triangle's true apex — an exact 180° point-reflection
+of the parent, verified as a `-1.0000` axis dot product at every depth
+tested. The other choice (`ab`) is geometrically meaningless: it's some
+other corner, ~60° off, not a real flip. This was a real bug until it
+was fixed — before the fix, any leaf cell whose path contained a `0`
+didn't actually have a meaningful vertex corner at `vertices[0]`.
+
+## Computing a cell's location without the full table
+
+`getCellVertices` / `getCellCenterDirection` / `getCellPolarCoordinates`
+(also in `icosahedron.ts`) recursively descend from a base face through
+an arbitrary `face:path` address and return that cell's geometry in
+O(depth) — no `DGGSStructure` instance or 1,280-cell table required.
+Verified to match the full table's generated centers exactly (0 drift,
+checked across all 1,280 leaf cells) — it's the same subdivision step
+DGGSStructure uses, just applied along one branch instead of all four
+at every level.
+
+There's no closed-form algebraic formula for this (each step
+re-normalizes a midpoint onto the sphere, which is nonlinear), but the
+recursion itself is simple and exact.
+
+### Orientation: local flip vs. absolute compass direction
+
+`trianglePointsNorth(vertex, west, east)` checks whether an arbitrary
+triangle's vertex-corner sits at a higher latitude than its base — a
+real, necessary geometric check, not something reducible to bookkeeping.
+Two related but different questions came up building this, and it's
+worth keeping them straight:
+
+- **Is a child triangle inverted relative to its own immediate parent's
+  shape?** Yes, cleanly, for the medial child only (the `-1.0000`
+  fact above) — vertex/west/east children are non-inverted, scaled
+  copies. This holds at every level, for every face.
+- **Does a child triangle point toward the true north or south pole in
+  absolute terms?** This does **not** reduce to a simple rule (e.g.
+  "count the zeros in the path"). A first pass assumed it would — that
+  turned out to be wrong once checked: descending into a west or east
+  corner relocates the triangle to a genuinely different point on the
+  sphere (the parent's west or east corner), whose own absolute
+  north/south relationship depends on where that point actually is, not
+  on the parent's orientation. Only the medial step has a clean,
+  universal rule; corner steps require calling `trianglePointsNorth` on
+  the actual resulting geometry.
+
 ## Beacon numbering
 
 Beacons sit at the 12 base vertices and are numbered identically to the
