@@ -24,6 +24,11 @@ recursive subdivision, tile normals, spherical navigation — more than it is a 
 - Procedural per-cell biome coloring, and independent wireframe visibility toggles
   for each subdivision depth (D0-D3).
 
+See [docs/dggs-spec.md](docs/dggs-spec.md) for the full face/beacon numbering
+spec, including the adjacency graph and a couple of verified quirks (the
+hemisphere chirality flip, and why "next beacon number" and "next reachable
+vertex" diverge at the ring crossings).
+
 ## Running it
 
 ```bash
