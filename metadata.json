@@ -1,0 +1,6 @@
+{
+  "name": "DGGS Icosahedral Walking Simulator",
+  "description": "A 3rd-person spherical walking simulator on a discrete global grid system (DGGS) icosahedral tessellated planet with curvature-aligned gravity, procedural bipedal character physics, and multi-depth cell inspection.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
