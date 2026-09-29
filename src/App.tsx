@@ -1,11 +1,14 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
+import { Trophy } from 'lucide-react';
 import { DGGSPlanet } from './dggs/planet';
 import { BipedCharacter } from './character/biped';
 import { SphericalCharacterController, CameraMode, CharacterOrientationMode } from './character/controller';
 import { DGGSCell } from './dggs/icosahedron';
 import { DGGSOverlay } from './components/DGGSOverlay';
 import { soundEngine } from './audio/sound';
+
+const TOTAL_ACHIEVEMENTS = 1;
 
 export default function App() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -18,6 +21,8 @@ export default function App() {
     speed: 0,
   });
   const [beaconsActivated, setBeaconsActivated] = useState(0);
+  const [achievementUnlocked, setAchievementUnlocked] = useState(false);
+  const [showAchievementToast, setShowAchievementToast] = useState(false);
   const [cameraMode, setCameraMode] = useState<CameraMode>('curved_horizon');
   const [orientationMode, setOrientationMode] = useState<CharacterOrientationMode>('tile_normal');
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -48,6 +53,13 @@ export default function App() {
   const joystickTouchIdRef = useRef<number | null>(null);
   const [joystickThumb, setJoystickThumb] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const joystickThumbRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  // Auto-dismiss the achievement toast a few seconds after it appears
+  useEffect(() => {
+    if (!showAchievementToast) return;
+    const timer = setTimeout(() => setShowAchievementToast(false), 6000);
+    return () => clearTimeout(timer);
+  }, [showAchievementToast]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -245,6 +257,7 @@ export default function App() {
     let lastTime = performance.now();
     let animFrameId: number;
     let telemetryThrottle = 0;
+    let achievementFired = false;
 
     const animate = (currentTime: number) => {
       animFrameId = requestAnimationFrame(animate);
@@ -291,6 +304,11 @@ export default function App() {
               if (activated) {
                 const count = planet.beacons.filter((b) => b.activated).length;
                 setBeaconsActivated(count);
+                if (count === 12 && !achievementFired) {
+                  achievementFired = true;
+                  setAchievementUnlocked(true);
+                  setShowAchievementToast(true);
+                }
               }
             }
           }
@@ -470,6 +488,25 @@ export default function App() {
         onToggleSound={handleToggleSound}
         onResetPosition={handleResetPosition}
       />
+
+      {/* Achievement Toast */}
+      {achievementUnlocked && (
+        <div
+          className={`fixed top-6 left-1/2 -translate-x-1/2 z-50 pointer-events-none transition-all duration-700 ease-out ${
+            showAchievementToast ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'
+          }`}
+        >
+          <div className="flex items-center gap-3 bg-slate-950/90 backdrop-blur-md border border-amber-400/40 rounded-xl px-5 py-3 shadow-2xl">
+            <Trophy className="w-6 h-6 text-amber-400 shrink-0" />
+            <div>
+              <div className="text-[10px] font-medium uppercase tracking-wider text-amber-400">
+                Achievement #1 of {TOTAL_ACHIEVEMENTS}
+              </div>
+              <div className="text-sm font-semibold text-white">Light 12 Beacons</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Mobile Virtual Touch Controls */}
       <div className="absolute bottom-16 left-6 pointer-events-auto md:hidden">
