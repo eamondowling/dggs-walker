@@ -39,3 +39,8 @@ zoom, Space to jump.
 ## Stack
 
 React 19, Three.js, TypeScript, Vite, Tailwind CSS.
+
+## License
+
+[PolyForm Noncommercial 1.0.0](LICENSE) — free to use, modify, and share for
+noncommercial purposes with attribution. Contact me for commercial use.
