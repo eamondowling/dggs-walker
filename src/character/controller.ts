@@ -295,7 +295,9 @@ export class SphericalCharacterController {
       // fraction of the view whether zoomed into one face or out at the whole net.
       const panSensitivity = 0.003;
       const scale = this.netCameraDistance() * panSensitivity;
-      this.netPanOffset.x -= deltaX * scale;
+      // Matches the ground-view orbit camera's feel (drag right -> view swings right,
+      // content shifts left) rather than a literal "drag the map" convention.
+      this.netPanOffset.x += deltaX * scale;
       this.netPanOffset.y += deltaY * scale;
       return;
     }
