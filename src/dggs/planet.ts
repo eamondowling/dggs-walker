@@ -118,6 +118,7 @@ export class DGGSPlanet {
   public activeCellHighlight: THREE.LineLoop;
   public beacons: BeaconState[] = [];
   public netGroup: THREE.Group;
+  public netMarker: THREE.Mesh;
 
   constructor(radius = 42, depth: number = DEFAULT_DGGS_DEPTH) {
     this.radius = radius;
@@ -148,6 +149,23 @@ export class DGGSPlanet {
     this.netGroup.position.copy(NET_WORLD_OFFSET);
     this.netGroup.visible = false;
     this.group.add(this.netGroup);
+
+    // 6. "You are here" marker on the net, repositioned every frame by the controller
+    this.netMarker = this.buildNetMarker();
+    this.netGroup.add(this.netMarker);
+  }
+
+  private buildNetMarker(): THREE.Mesh {
+    const netScale = this.radius * NET_EDGE_CHORD;
+    const leafEdge = netScale / 2 ** this.dggs.maxDepth;
+    const outerRadius = leafEdge * 0.7;
+
+    const geometry = new THREE.RingGeometry(outerRadius * 0.5, outerRadius, 32);
+    const material = new THREE.MeshBasicMaterial({ color: 0xef4444, side: THREE.DoubleSide, depthTest: false });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.renderOrder = 10;
+    mesh.frustumCulled = false;
+    return mesh;
   }
 
   /** Swaps visibility between the sphere (terrain/wireframes/beacons) and the flat net view. */

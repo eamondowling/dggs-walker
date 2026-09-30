@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { BipedCharacter } from './biped';
 import { DGGSPlanet, NET_WORLD_OFFSET } from '../dggs/planet';
-import { NET_EDGE_CHORD, NET_LAYOUT_CENTER } from '../dggs/net';
+import { getNetTriangle, NET_EDGE_CHORD } from '../dggs/net';
+import { DGGSCell } from '../dggs/icosahedron';
 
 export type CameraMode = 'curved_horizon' | 'close_third' | 'wide_panoramic' | 'orbital_planet' | 'icosahedral_net';
 export type CharacterOrientationMode = 'tile_normal' | 'camera_top' | 'radial_gravity';
@@ -18,7 +19,7 @@ export const CAMERA_PRESETS: Record<CameraMode, CameraPreset> = {
   close_third: { distance: 3.8, height: 1.6, pitch: 15, fov: 60 },
   wide_panoramic: { distance: 11.5, height: 4.8, pitch: 24, fov: 72 },
   orbital_planet: { distance: 120.0, height: 35.0, pitch: 35, fov: 50 },
-  icosahedral_net: { distance: 220.0, height: 0, pitch: 0, fov: 55 },
+  icosahedral_net: { distance: 60.0, height: 0, pitch: 0, fov: 55 },
 };
 
 export class FootstepParticles {
@@ -141,6 +142,9 @@ export class SphericalCharacterController {
   public currentLookAt: THREE.Vector3 = new THREE.Vector3();
   public currentCameraQuat: THREE.Quaternion = new THREE.Quaternion();
 
+  // Updated every frame; drives the net-view "you are here" marker and camera.
+  public currentDGGSCell: DGGSCell | null = null;
+
   // Input State
   public input = {
     forward: 0, // +1 = forward (W), -1 = backward (S)
@@ -220,13 +224,16 @@ export class SphericalCharacterController {
       const targetLookAt = new THREE.Vector3(0, 0, 0);
       return { targetCamPos, targetLookAt };
     } else if (this.cameraMode === 'icosahedral_net') {
-      // Fixed view of the flat unfolded net — not character-relative at all,
-      // since it's a separate static layout parked well away from the sphere.
+      // Follows the character's position on the flat unfolded net (not the net's
+      // geometric center) so the "you are here" marker is always in view. Mouse
+      // wheel (cameraDistanceOffset) zooms between a single-face close-up and a
+      // wide view of several surrounding faces.
       const netScale = this.planet.radius * NET_EDGE_CHORD;
-      const targetLookAt = NET_WORLD_OFFSET.clone().add(
-        new THREE.Vector3(NET_LAYOUT_CENTER.x * netScale, NET_LAYOUT_CENTER.y * netScale, 0),
-      );
-      const targetCamPos = targetLookAt.clone().add(new THREE.Vector3(0, 0, preset.distance));
+      const cell = this.currentDGGSCell ?? this.planet.dggs.findCellAtPosition(this.unitPosition);
+      const { x, y } = this.netCentroid(cell);
+      const targetLookAt = NET_WORLD_OFFSET.clone().add(new THREE.Vector3(x * netScale, y * netScale, 0));
+      const dist = THREE.MathUtils.clamp(preset.distance + this.cameraDistanceOffset * 15, 20, 260);
+      const targetCamPos = targetLookAt.clone().add(new THREE.Vector3(0, 0, dist));
       return { targetCamPos, targetLookAt };
     } else {
       // The camera naturally tracks behind the character's facing direction
@@ -397,8 +404,27 @@ export class SphericalCharacterController {
     // Update particles
     this.particles.update(dt);
 
+    // Track the current cell for the net-view marker/camera (cheap; see icosahedron.ts findCellAtPosition)
+    this.currentDGGSCell = this.planet.dggs.findCellAtPosition(this.unitPosition);
+    this.updateNetMarker(this.currentDGGSCell);
+
     // 7. Smooth Camera Rig
     this.updateCamera(dt);
+  }
+
+  private updateNetMarker(cell: DGGSCell) {
+    const netScale = this.planet.radius * NET_EDGE_CHORD;
+    const { x, y } = this.netCentroid(cell);
+    this.planet.netMarker.position.set(x * netScale, y * netScale, 2);
+  }
+
+  private netCentroid(cell: DGGSCell): THREE.Vector2 {
+    const tri = getNetTriangle(cell.faceIndex, cell.path);
+    return new THREE.Vector2()
+      .add(tri.vertex)
+      .add(tri.west)
+      .add(tri.east)
+      .multiplyScalar(1 / 3);
   }
 
   private updateCamera(dt: number) {
