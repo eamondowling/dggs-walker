@@ -11,6 +11,79 @@ const BIOME_TEXTURE_URLS: Record<string, string> = {
 
 const textureLoader = new THREE.TextureLoader();
 
+// World-space size (in scene units) one texture tile covers — tuned against the
+// ~6-unit edge length of a depth-3 leaf cell at radius 42.
+const TRIPLANAR_TILE_SIZE = 12;
+
+/**
+ * A MeshStandardMaterial patched (via onBeforeCompile) to sample its texture
+ * triplanar-projected from world position, blended by the surface normal,
+ * instead of from UVs. Every fragment samples a pure function of world
+ * position, so adjacent facets of the same biome — which share an edge in
+ * actual 3D space even though their vertices aren't deduplicated — sample
+ * identically along that edge. That's what removes the per-facet seams the
+ * plain per-triangle UV mapping had.
+ */
+function createTriplanarMaterial(texture: THREE.Texture): THREE.MeshStandardMaterial {
+  const material = new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    roughness: 0.7,
+    metalness: 0.08,
+    flatShading: true,
+    side: THREE.DoubleSide,
+  });
+
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.triplanarMap = { value: texture };
+    shader.uniforms.triplanarScale = { value: 1 / TRIPLANAR_TILE_SIZE };
+
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+varying vec3 vTriplanarWorldPosition;
+varying vec3 vTriplanarObjectNormal;`,
+      )
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+vTriplanarWorldPosition = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
+vTriplanarObjectNormal = normal;`,
+      );
+
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+uniform sampler2D triplanarMap;
+uniform float triplanarScale;
+varying vec3 vTriplanarWorldPosition;
+varying vec3 vTriplanarObjectNormal;`,
+      )
+      .replace(
+        '#include <map_fragment>',
+        `
+{
+  vec3 blendWeights = pow( abs( normalize( vTriplanarObjectNormal ) ), vec3( 4.0 ) );
+  blendWeights /= ( blendWeights.x + blendWeights.y + blendWeights.z + 1e-5 );
+
+  vec2 uvX = vTriplanarWorldPosition.zy * triplanarScale;
+  vec2 uvY = vTriplanarWorldPosition.xz * triplanarScale;
+  vec2 uvZ = vTriplanarWorldPosition.xy * triplanarScale;
+
+  vec4 texX = texture2D( triplanarMap, uvX );
+  vec4 texY = texture2D( triplanarMap, uvY );
+  vec4 texZ = texture2D( triplanarMap, uvZ );
+
+  diffuseColor *= texX * blendWeights.x + texY * blendWeights.y + texZ * blendWeights.z;
+}
+`,
+      );
+  };
+
+  return material;
+}
+
 export interface PlanetOptions {
   radius: number;
   showDepth0Wire: boolean;
@@ -90,7 +163,6 @@ export class DGGSPlanet {
       const positions: number[] = [];
       const colors: number[] = [];
       const normals: number[] = [];
-      const uvs: number[] = [];
 
       for (const cell of cells) {
         const [v0, v1, v2] = cell.vertices;
@@ -114,29 +186,19 @@ export class DGGSPlanet {
           colors.push(tempColor.r, tempColor.g, tempColor.b);
           normals.push(faceNormal.x, faceNormal.y, faceNormal.z);
         }
-
-        // Each cell has its own unique vertices (nothing shared/indexed), so the
-        // whole texture can be mapped across every facet independently — no seams to unwrap.
-        uvs.push(0, 0, 1, 0, 0, 1);
       }
 
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
       geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
       geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-      geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
 
       const texture = textureLoader.load(BIOME_TEXTURE_URLS[biomeName]);
       texture.colorSpace = THREE.SRGBColorSpace;
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.RepeatWrapping;
 
-      const material = new THREE.MeshStandardMaterial({
-        map: texture,
-        vertexColors: true,
-        roughness: 0.7,
-        metalness: 0.08,
-        flatShading: true,
-        side: THREE.DoubleSide,
-      });
+      const material = createTriplanarMaterial(texture);
 
       const mesh = new THREE.Mesh(geometry, material);
       mesh.frustumCulled = false;
