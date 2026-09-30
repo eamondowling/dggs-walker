@@ -1,20 +1,15 @@
 import React from 'react';
-import { CameraMode, CharacterOrientationMode } from '../character/controller';
+import { CameraMode } from '../character/controller';
 import { DGGSCell, faceCountAtDepth } from '../dggs/icosahedron';
 import {
   Volume2,
   VolumeX,
-  Compass,
   RotateCcw,
   Layers,
   Sparkles,
-  Eye,
   Crosshair,
-  MapPin,
   ChevronDown,
   ChevronUp,
-  Shield,
-  Navigation,
 } from 'lucide-react';
 
 // Tailwind classes per wireframe depth button, outermost (coarsest) to innermost (finest).
@@ -39,8 +34,6 @@ interface DGGSOverlayProps {
   leafCellCount: number;
   cameraMode: CameraMode;
   onSelectCameraMode: (mode: CameraMode) => void;
-  orientationMode: CharacterOrientationMode;
-  onSelectOrientationMode: (mode: CharacterOrientationMode) => void;
   wireframeDepth: boolean[];
   onToggleWireframe: (depth: number) => void;
   soundEnabled: boolean;
@@ -62,8 +55,6 @@ export const DGGSOverlay: React.FC<DGGSOverlayProps> = ({
   leafCellCount,
   cameraMode,
   onSelectCameraMode,
-  orientationMode,
-  onSelectOrientationMode,
   wireframeDepth,
   onToggleWireframe,
   soundEnabled,
@@ -198,17 +189,6 @@ export const DGGSOverlay: React.FC<DGGSOverlayProps> = ({
                       {speed.toFixed(1)} m/s
                     </span>
                   </div>
-
-                  <div className="flex items-center justify-between font-mono text-[11px] text-slate-400">
-                    <span>Upright Mode</span>
-                    <span className="text-rose-400 font-medium">
-                      {orientationMode === 'tile_normal'
-                        ? 'Tile Facet Normal'
-                        : orientationMode === 'camera_top'
-                        ? 'Camera View Top'
-                        : 'Radial Gravity'}
-                    </span>
-                  </div>
                 </>
               )}
             </div>
@@ -228,55 +208,6 @@ export const DGGSOverlay: React.FC<DGGSOverlayProps> = ({
 
         {/* Right: Quick Controls & Camera Modes */}
         <div className="pointer-events-auto flex flex-col gap-2.5 items-end">
-          {/* Character Orientation Mode (User control for tile normal vs camera view top vs radial) */}
-          <div className="bg-slate-950/75 backdrop-blur-md border border-white/10 rounded-xl p-2.5 shadow-2xl flex flex-col gap-1.5 w-full max-w-[210px]">
-            <div className="flex items-center justify-between text-[11px] font-medium uppercase tracking-wider text-slate-400 pb-1 border-b border-white/10">
-              <div className="flex items-center gap-1.5">
-                <Compass className="w-3.5 h-3.5 text-rose-400" />
-                <span>Upright Alignment</span>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-1 pt-0.5">
-              <button
-                onClick={() => onSelectOrientationMode('tile_normal')}
-                title="Align character normal to whichever DGGS facet tile it is on"
-                className={`px-2.5 py-1.5 text-xs text-left font-medium rounded-lg transition-colors flex items-center justify-between cursor-pointer ${
-                  orientationMode === 'tile_normal'
-                    ? 'bg-rose-500/25 border border-rose-500/60 text-rose-200'
-                    : 'text-slate-300 hover:text-white hover:bg-white/5 border border-transparent'
-                }`}
-              >
-                <span>Tile Normal</span>
-                <span className="text-[10px] text-slate-400 font-normal">Active tile</span>
-              </button>
-              <button
-                onClick={() => onSelectOrientationMode('camera_top')}
-                title="Align character straight up toward camera view top"
-                className={`px-2.5 py-1.5 text-xs text-left font-medium rounded-lg transition-colors flex items-center justify-between cursor-pointer ${
-                  orientationMode === 'camera_top'
-                    ? 'bg-sky-500/25 border border-sky-500/60 text-sky-200'
-                    : 'text-slate-300 hover:text-white hover:bg-white/5 border border-transparent'
-                }`}
-              >
-                <span>Camera View Top</span>
-                <span className="text-[10px] text-slate-400 font-normal">Screen-up</span>
-              </button>
-              <button
-                onClick={() => onSelectOrientationMode('radial_gravity')}
-                title="Align character with spherical planet center gravity"
-                className={`px-2.5 py-1.5 text-xs text-left font-medium rounded-lg transition-colors flex items-center justify-between cursor-pointer ${
-                  orientationMode === 'radial_gravity'
-                    ? 'bg-amber-500/25 border border-amber-500/60 text-amber-200'
-                    : 'text-slate-300 hover:text-white hover:bg-white/5 border border-transparent'
-                }`}
-              >
-                <span>Radial Gravity</span>
-                <span className="text-[10px] text-slate-400 font-normal">Center</span>
-              </button>
-            </div>
-          </div>
-
           {/* Camera Perspective Mode Segmented Control */}
           <div className="bg-slate-950/75 backdrop-blur-md border border-white/10 rounded-xl p-1.5 flex flex-col sm:flex-row gap-1 shadow-2xl">
             {(

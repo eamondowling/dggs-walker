@@ -5,7 +5,6 @@ import { getNetTriangle, NET_EDGE_CHORD } from '../dggs/net';
 import { DGGSCell } from '../dggs/icosahedron';
 
 export type CameraMode = 'curved_horizon' | 'close_third' | 'wide_panoramic' | 'orbital_planet' | 'icosahedral_net';
-export type CharacterOrientationMode = 'tile_normal' | 'camera_top' | 'radial_gravity';
 
 export interface CameraPreset {
   distance: number;
@@ -115,13 +114,9 @@ export class SphericalCharacterController {
   public unitPosition: THREE.Vector3 = new THREE.Vector3(0, 1, 0); // Normalized direction from planet center
   public currentPosition: THREE.Vector3 = new THREE.Vector3();
   public localUp: THREE.Vector3 = new THREE.Vector3(0, 1, 0);
-  public characterUp: THREE.Vector3 = new THREE.Vector3(0, 1, 0); // Effective orientation UP vector
-  public activeTileNormal: THREE.Vector3 = new THREE.Vector3(0, 1, 0); // Normal of the active DGGS tile
+  public characterUp: THREE.Vector3 = new THREE.Vector3(0, 1, 0); // Effective orientation UP vector (always radial gravity)
   public forwardHeading: THREE.Vector3 = new THREE.Vector3(0, 0, 1); // Tangent forward vector
   public velocityTangent: THREE.Vector3 = new THREE.Vector3();
-
-  // Orientation Mode: 'tile_normal' | 'camera_top' | 'radial_gravity'
-  public orientationMode: CharacterOrientationMode = 'tile_normal';
 
   // Physics
   public verticalHeight = 0;
@@ -166,15 +161,6 @@ export class SphericalCharacterController {
     this.localUp.copy(this.unitPosition).normalize();
     this.characterUp.copy(this.localUp);
     this.updatePositionVectors();
-
-    // Determine initial tile normal
-    const initialCell = this.planet.dggs.findCellAtPosition(this.unitPosition);
-    if (initialCell?.tileNormal) {
-      this.activeTileNormal.copy(initialCell.tileNormal);
-      if (this.orientationMode === 'tile_normal') {
-        this.characterUp.copy(initialCell.tileNormal);
-      }
-    }
 
     // Connect footstep callback
     this.character.onFootstep = (pos, _isLeft) => {
@@ -267,10 +253,6 @@ export class SphericalCharacterController {
     this.cameraDistanceOffset = 0;
   }
 
-  public setOrientationMode(mode: CharacterOrientationMode) {
-    this.orientationMode = mode;
-  }
-
   public handleWheel(deltaY: number) {
     this.cameraDistanceOffset = THREE.MathUtils.clamp(
       this.cameraDistanceOffset + deltaY * 0.005,
@@ -360,23 +342,9 @@ export class SphericalCharacterController {
       }
     }
 
-    // 5. Determine UP vector based on orientation mode:
-    let desiredUp = this.localUp;
-    if (this.orientationMode === 'tile_normal') {
-      // Normal to whichever DGGS tile the character is interacting with
-      const activeCell = this.planet.dggs.findCellAtPosition(this.unitPosition);
-      if (activeCell?.tileNormal) {
-        desiredUp = activeCell.tileNormal;
-        this.activeTileNormal.copy(activeCell.tileNormal);
-      }
-    } else if (this.orientationMode === 'camera_top') {
-      // Oriented to the camera view top (screen-up)
-      const camViewTop = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion).normalize();
-      desiredUp = camViewTop;
-    }
-
-    // Smoothly interpolate characterUp to eliminate any abrupt tile or camera snapping
-    this.characterUp.lerp(desiredUp, Math.min(1.0, 14 * dt)).normalize();
+    // 5. Upright alignment: always radial gravity (straight out from the planet center) —
+    // smoothed so characterUp doesn't snap instantly as localUp shifts while walking.
+    this.characterUp.lerp(this.localUp, Math.min(1.0, 14 * dt)).normalize();
 
     // 6. Update Character Mesh Position & Rotation Matrix
     this.character.group.position.copy(this.currentPosition);

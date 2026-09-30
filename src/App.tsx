@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { Trophy } from 'lucide-react';
 import { DGGSPlanet } from './dggs/planet';
 import { BipedCharacter } from './character/biped';
-import { SphericalCharacterController, CameraMode, CharacterOrientationMode } from './character/controller';
+import { SphericalCharacterController, CameraMode } from './character/controller';
 import { DGGSCell, DEFAULT_DGGS_DEPTH } from './dggs/icosahedron';
 import { DGGSOverlay } from './components/DGGSOverlay';
 import { soundEngine } from './audio/sound';
@@ -24,7 +24,6 @@ export default function App() {
   const [achievementUnlocked, setAchievementUnlocked] = useState(false);
   const [showAchievementToast, setShowAchievementToast] = useState(false);
   const [cameraMode, setCameraMode] = useState<CameraMode>('curved_horizon');
-  const [orientationMode, setOrientationMode] = useState<CharacterOrientationMode>('tile_normal');
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [wireframeDepth, setWireframeDepth] = useState<boolean[]>(() =>
     Array(DEFAULT_DGGS_DEPTH + 1).fill(true),
@@ -378,13 +377,6 @@ export default function App() {
     }
   }, []);
 
-  const handleSelectOrientationMode = useCallback((mode: CharacterOrientationMode) => {
-    setOrientationMode(mode);
-    if (controllerRef.current) {
-      controllerRef.current.setOrientationMode(mode);
-    }
-  }, []);
-
   const handleToggleWireframe = useCallback((depth: number) => {
     setWireframeDepth((prev) => {
       const next = [...prev];
@@ -488,8 +480,6 @@ export default function App() {
         leafCellCount={leafCellCount}
         cameraMode={cameraMode}
         onSelectCameraMode={handleSelectCameraMode}
-        orientationMode={orientationMode}
-        onSelectOrientationMode={handleSelectOrientationMode}
         wireframeDepth={wireframeDepth}
         onToggleWireframe={handleToggleWireframe}
         soundEnabled={soundEnabled}
