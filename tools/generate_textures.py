@@ -6,7 +6,7 @@ Prerequisites:
     z_image_turbo_bf16.safetensors (diffusion model), ae.safetensors (VAE)
 
 Usage:
-  python tools/generate_textures.py assets/textures
+  python tools/generate_textures.py public/textures
 """
 
 import json

@@ -1,6 +1,16 @@
 import * as THREE from 'three';
 import { DGGSStructure, DGGSCell, getBiomeForNormal } from './icosahedron';
 
+const BIOME_TEXTURE_URLS: Record<string, string> = {
+  'Calcite Polar Glade': '/textures/calcite-polar-glade.png',
+  'Basalt Abyssal Basin': '/textures/basalt-abyssal-basin.png',
+  'Geodesic Moss Steppes': '/textures/geodesic-moss-steppes.png',
+  'Amber Quartz Plateau': '/textures/amber-quartz-plateau.png',
+  'Crystalline Crags': '/textures/crystalline-crags.png',
+};
+
+const textureLoader = new THREE.TextureLoader();
+
 export interface PlanetOptions {
   radius: number;
   showDepth0Wire: boolean;
@@ -23,7 +33,7 @@ export class DGGSPlanet {
   public group: THREE.Group;
   public dggs: DGGSStructure;
   public radius: number;
-  public terrainMesh: THREE.Mesh;
+  public terrainGroup: THREE.Group;
   public depth0Lines: THREE.LineSegments;
   public depth1Lines: THREE.LineSegments;
   public depth2Lines: THREE.LineSegments;
@@ -36,9 +46,9 @@ export class DGGSPlanet {
     this.group = new THREE.Group();
     this.dggs = new DGGSStructure();
 
-    // 1. Build Terrain Mesh
-    this.terrainMesh = this.buildTerrainMesh();
-    this.group.add(this.terrainMesh);
+    // 1. Build Terrain Mesh (one sub-mesh per biome, each with its own texture)
+    this.terrainGroup = this.buildTerrainGroup();
+    this.group.add(this.terrainGroup);
 
     // 2. Build DGGS Wireframes for each depth
     this.depth0Lines = this.buildWireframeForDepth(0, 0xf59e0b, 0.9); // Gold
@@ -64,54 +74,76 @@ export class DGGSPlanet {
     return this.radius;
   }
 
-  private buildTerrainMesh(): THREE.Mesh {
-    const cells = this.dggs.leafCells; // 1280 cells
-    const positions: number[] = [];
-    const colors: number[] = [];
-    const normals: number[] = [];
-
-    const tempColor = new THREE.Color();
-
-    for (const cell of cells) {
-      const [v0, v1, v2] = cell.vertices;
-      const biome = getBiomeForNormal(cell.normal);
-
-      // Uniform sphere — every vertex sits at the same radius.
-      const p0 = v0.clone().multiplyScalar(this.radius);
-      const p1 = v1.clone().multiplyScalar(this.radius);
-      const p2 = v2.clone().multiplyScalar(this.radius);
-      const faceNormal = cell.tileNormal;
-
-      positions.push(p0.x, p0.y, p0.z);
-      positions.push(p1.x, p1.y, p1.z);
-      positions.push(p2.x, p2.y, p2.z);
-
-      // Slight cell color variation for crisp DGGS facet legibility
-      const hash = Math.sin(cell.faceIndex * 133.7 + (cell.path[0] || 0) * 17.3 + (cell.path[1] || 0) * 7.1) * 0.04;
-      tempColor.copy(biome.color).offsetHSL(hash, 0, hash);
-
-      for (let i = 0; i < 3; i++) {
-        colors.push(tempColor.r, tempColor.g, tempColor.b);
-        normals.push(faceNormal.x, faceNormal.y, faceNormal.z);
-      }
+  private buildTerrainGroup(): THREE.Group {
+    const cellsByBiome = new Map<string, DGGSCell[]>();
+    for (const cell of this.dggs.leafCells) {
+      const biomeName = getBiomeForNormal(cell.normal).name;
+      const bucket = cellsByBiome.get(biomeName);
+      if (bucket) bucket.push(cell);
+      else cellsByBiome.set(biomeName, [cell]);
     }
 
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    const group = new THREE.Group();
+    const tempColor = new THREE.Color();
 
-    const material = new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      roughness: 0.7,
-      metalness: 0.08,
-      flatShading: true,
-      side: THREE.DoubleSide,
-    });
+    for (const [biomeName, cells] of cellsByBiome) {
+      const positions: number[] = [];
+      const colors: number[] = [];
+      const normals: number[] = [];
+      const uvs: number[] = [];
 
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.frustumCulled = false;
-    return mesh;
+      for (const cell of cells) {
+        const [v0, v1, v2] = cell.vertices;
+        const biome = getBiomeForNormal(cell.normal);
+
+        // Uniform sphere — every vertex sits at the same radius.
+        const p0 = v0.clone().multiplyScalar(this.radius);
+        const p1 = v1.clone().multiplyScalar(this.radius);
+        const p2 = v2.clone().multiplyScalar(this.radius);
+        const faceNormal = cell.tileNormal;
+
+        positions.push(p0.x, p0.y, p0.z);
+        positions.push(p1.x, p1.y, p1.z);
+        positions.push(p2.x, p2.y, p2.z);
+
+        // Slight cell color variation for crisp DGGS facet legibility (tints the texture)
+        const hash = Math.sin(cell.faceIndex * 133.7 + (cell.path[0] || 0) * 17.3 + (cell.path[1] || 0) * 7.1) * 0.04;
+        tempColor.copy(biome.color).offsetHSL(hash, 0, hash);
+
+        for (let i = 0; i < 3; i++) {
+          colors.push(tempColor.r, tempColor.g, tempColor.b);
+          normals.push(faceNormal.x, faceNormal.y, faceNormal.z);
+        }
+
+        // Each cell has its own unique vertices (nothing shared/indexed), so the
+        // whole texture can be mapped across every facet independently — no seams to unwrap.
+        uvs.push(0, 0, 1, 0, 0, 1);
+      }
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+      geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+      geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+
+      const texture = textureLoader.load(BIOME_TEXTURE_URLS[biomeName]);
+      texture.colorSpace = THREE.SRGBColorSpace;
+
+      const material = new THREE.MeshStandardMaterial({
+        map: texture,
+        vertexColors: true,
+        roughness: 0.7,
+        metalness: 0.08,
+        flatShading: true,
+        side: THREE.DoubleSide,
+      });
+
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.frustumCulled = false;
+      group.add(mesh);
+    }
+
+    return group;
   }
 
   private buildWireframeForDepth(depth: number, colorHex: number, opacity: number): THREE.LineSegments {
