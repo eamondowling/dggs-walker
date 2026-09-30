@@ -404,18 +404,12 @@ export class SphericalCharacterController {
     // Update particles
     this.particles.update(dt);
 
-    // Track the current cell for the net-view marker/camera (cheap; see icosahedron.ts findCellAtPosition)
+    // Track the current cell for the net-view highlight/camera (cheap; see icosahedron.ts findCellAtPosition)
     this.currentDGGSCell = this.planet.dggs.findCellAtPosition(this.unitPosition);
-    this.updateNetMarker(this.currentDGGSCell);
+    this.planet.updateNetActiveCell(this.currentDGGSCell);
 
     // 7. Smooth Camera Rig
     this.updateCamera(dt);
-  }
-
-  private updateNetMarker(cell: DGGSCell) {
-    const netScale = this.planet.radius * NET_EDGE_CHORD;
-    const { x, y } = this.netCentroid(cell);
-    this.planet.netMarker.position.set(x * netScale, y * netScale, 2);
   }
 
   private netCentroid(cell: DGGSCell): THREE.Vector2 {

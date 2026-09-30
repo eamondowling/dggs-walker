@@ -118,7 +118,7 @@ export class DGGSPlanet {
   public activeCellHighlight: THREE.LineLoop;
   public beacons: BeaconState[] = [];
   public netGroup: THREE.Group;
-  public netMarker: THREE.Mesh;
+  public netActiveCellHighlight: THREE.LineLoop;
 
   constructor(radius = 42, depth: number = DEFAULT_DGGS_DEPTH) {
     this.radius = radius;
@@ -150,22 +150,22 @@ export class DGGSPlanet {
     this.netGroup.visible = false;
     this.group.add(this.netGroup);
 
-    // 6. "You are here" marker on the net, repositioned every frame by the controller
-    this.netMarker = this.buildNetMarker();
-    this.netGroup.add(this.netMarker);
+    // 6. "You are here" — outlines the character's actual current cell on the net,
+    // the same way activeCellHighlight does on the sphere, instead of a floating
+    // icon that doesn't read as a place on the map.
+    this.netActiveCellHighlight = this.buildActiveCellHighlight();
+    this.netGroup.add(this.netActiveCellHighlight);
   }
 
-  private buildNetMarker(): THREE.Mesh {
+  /** Mirrors updateActiveCell, but for the flat net's leaf-cell outline. */
+  public updateNetActiveCell(cell: DGGSCell) {
     const netScale = this.radius * NET_EDGE_CHORD;
-    const leafEdge = netScale / 2 ** this.dggs.maxDepth;
-    const outerRadius = leafEdge * 0.7;
-
-    const geometry = new THREE.RingGeometry(outerRadius * 0.5, outerRadius, 32);
-    const material = new THREE.MeshBasicMaterial({ color: 0xef4444, side: THREE.DoubleSide, depthTest: false });
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.renderOrder = 10;
-    mesh.frustumCulled = false;
-    return mesh;
+    const { vertex, west, east } = getNetTriangle(cell.faceIndex, cell.path);
+    const posAttr = this.netActiveCellHighlight.geometry.getAttribute('position') as THREE.BufferAttribute;
+    posAttr.setXYZ(0, vertex.x * netScale, vertex.y * netScale, 3);
+    posAttr.setXYZ(1, west.x * netScale, west.y * netScale, 3);
+    posAttr.setXYZ(2, east.x * netScale, east.y * netScale, 3);
+    posAttr.needsUpdate = true;
   }
 
   /** Swaps visibility between the sphere (terrain/wireframes/beacons) and the flat net view. */
