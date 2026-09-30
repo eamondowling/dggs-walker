@@ -127,6 +127,37 @@ This isn't a bug — it's the same reason a clock viewed from behind
 appears to run backwards. Your reference frame (which pole you're facing
 away from) flips between hemispheres; the rotation itself never does.
 
+## Unfolded net (flat layout)
+
+![Unfolded icosahedral net](net-view-screenshot.jpg)
+
+`src/dggs/net.ts` lays the same 20 faces out flat — the "Net View"
+camera mode — oriented around the two middle bands as a horizontal
+zigzag strip, with the north cap fanned above it and the south cap
+fanned below. This is the same family of projection real DGGS/map
+work uses (see Buckminster Fuller's Dymaxion map): every face stays an
+exact, undistorted flat triangle; the only "distortion" is conceptual,
+at the fold lines between faces, rather than smoothly smeared across
+the whole surface the way Mercator or equirectangular projections are.
+
+Because the net has no curvature to account for, subdividing it is
+exact plane geometry — no per-level renormalization like the real 3D
+cells need. The subdivision step is a direct 2D port of the corrected
+medial/vertex/west/east rule above (same case order, same "medial's
+true apex is the base-edge midpoint" fact), so `getNetTriangle(faceIndex,
+path)` always means the same cell as `getCellVertices` on the sphere —
+verified by checking all 20 base faces are exact unit equilateral
+triangles, that known-adjacent faces share identical coordinates at
+their join, and that the full depth-3 subdivision produces exactly
+1,280 non-degenerate leaf triangles whose total area matches 20 unit
+equilateral triangles exactly.
+
+Necessarily, an unfolded closed solid needs at least one cut: here it's
+the seam between Face 9/Face 14 and Face 5/Face 10 (U0 and L0 each get
+a second, separate net-space copy where the strip's right end doesn't
+rejoin its left end) — normal for any net, including real cardboard
+icosahedron kits.
+
 ## Adjacency graph
 
 Every vertex has exactly 5 neighbors (regular icosahedron, degree 5
