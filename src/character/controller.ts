@@ -133,6 +133,9 @@ export class SphericalCharacterController {
   public cameraAzimuth = 0; // Mouse yaw orbit around character
   public cameraPitch = 20 * (Math.PI / 180);
   public cameraDistanceOffset = 0;
+  // Drag-to-pan offset (world units) for icosahedral_net mode, letting the view
+  // slide away from the character to browse the rest of the map.
+  public netPanOffset: THREE.Vector2 = new THREE.Vector2();
   public currentCameraPos: THREE.Vector3 = new THREE.Vector3();
   public currentLookAt: THREE.Vector3 = new THREE.Vector3();
   public currentCameraQuat: THREE.Quaternion = new THREE.Quaternion();
@@ -149,6 +152,7 @@ export class SphericalCharacterController {
   };
 
   private angularTurnSpeed = 0;
+  private lastTrailNetPos: THREE.Vector2 | null = null;
 
   constructor(character: BipedCharacter, planet: DGGSPlanet, camera: THREE.PerspectiveCamera) {
     this.character = character;
@@ -210,16 +214,19 @@ export class SphericalCharacterController {
       const targetLookAt = new THREE.Vector3(0, 0, 0);
       return { targetCamPos, targetLookAt };
     } else if (this.cameraMode === 'icosahedral_net') {
-      // Follows the character's position on the flat unfolded net (not the net's
-      // geometric center) so the "you are here" marker is always in view. Mouse
-      // wheel (cameraDistanceOffset) zooms between a single-face close-up and a
-      // wide view of several surrounding faces.
+      // Defaults to following the character's continuous position on the flat
+      // unfolded net (not the net's geometric center) so the "you are here"
+      // highlight is always in view — but netPanOffset (mouse-drag) can slide
+      // the look-at away from that to browse the rest of the map. Mouse wheel
+      // (cameraDistanceOffset) zooms between a single-face close-up and a wide
+      // view of several surrounding faces.
       const netScale = this.planet.radius * NET_EDGE_CHORD;
       const cell = this.currentDGGSCell ?? this.planet.dggs.findCellAtPosition(this.unitPosition);
-      const { x, y } = this.netCentroid(cell);
-      const targetLookAt = NET_WORLD_OFFSET.clone().add(new THREE.Vector3(x * netScale, y * netScale, 0));
-      const dist = THREE.MathUtils.clamp(preset.distance + this.cameraDistanceOffset * 15, 20, 260);
-      const targetCamPos = targetLookAt.clone().add(new THREE.Vector3(0, 0, dist));
+      const { x, y } = this.continuousNetPosition(cell);
+      const targetLookAt = NET_WORLD_OFFSET.clone().add(
+        new THREE.Vector3(x * netScale + this.netPanOffset.x, y * netScale + this.netPanOffset.y, 0),
+      );
+      const targetCamPos = targetLookAt.clone().add(new THREE.Vector3(0, 0, this.netCameraDistance()));
       return { targetCamPos, targetLookAt };
     } else {
       // The camera naturally tracks behind the character's facing direction
@@ -251,6 +258,7 @@ export class SphericalCharacterController {
     this.camera.updateProjectionMatrix();
     this.cameraPitch = preset.pitch * (Math.PI / 180);
     this.cameraDistanceOffset = 0;
+    this.netPanOffset.set(0, 0);
   }
 
   public handleWheel(deltaY: number) {
@@ -259,6 +267,11 @@ export class SphericalCharacterController {
       -2.0,
       12.0
     );
+  }
+
+  /** icosahedral_net's zoom distance, shared between the camera target and pan-drag scaling. */
+  private netCameraDistance(): number {
+    return THREE.MathUtils.clamp(CAMERA_PRESETS.icosahedral_net.distance + this.cameraDistanceOffset * 15, 20, 260);
   }
 
   private updatePositionVectors() {
@@ -277,6 +290,15 @@ export class SphericalCharacterController {
   }
 
   public handlePointerMove(deltaX: number, deltaY: number) {
+    if (this.cameraMode === 'icosahedral_net') {
+      // Drag-to-pan: scale by current zoom distance so a drag covers the same
+      // fraction of the view whether zoomed into one face or out at the whole net.
+      const panSensitivity = 0.003;
+      const scale = this.netCameraDistance() * panSensitivity;
+      this.netPanOffset.x -= deltaX * scale;
+      this.netPanOffset.y += deltaY * scale;
+      return;
+    }
     const sensitivity = 0.0035;
     this.cameraAzimuth -= deltaX * sensitivity;
     this.cameraPitch = THREE.MathUtils.clamp(this.cameraPitch + deltaY * sensitivity, -0.25, 1.25);
@@ -375,18 +397,59 @@ export class SphericalCharacterController {
     // Track the current cell for the net-view highlight/camera (cheap; see icosahedron.ts findCellAtPosition)
     this.currentDGGSCell = this.planet.dggs.findCellAtPosition(this.unitPosition);
     this.planet.updateNetActiveCell(this.currentDGGSCell);
+    this.recordNetTrailPoint(this.currentDGGSCell);
 
     // 7. Smooth Camera Rig
     this.updateCamera(dt);
   }
 
-  private netCentroid(cell: DGGSCell): THREE.Vector2 {
+  /**
+   * Appends to the net-view walking trail whenever the character has moved far
+   * enough (in net-space) since the last recorded point — recorded continuously
+   * regardless of which camera mode is active, so the full trail already exists
+   * whenever the player opens the net view.
+   */
+  private recordNetTrailPoint(cell: DGGSCell) {
+    const netScale = this.planet.radius * NET_EDGE_CHORD;
+    const pos = this.continuousNetPosition(cell).multiplyScalar(netScale);
+    const minStep = netScale / 2 ** this.planet.dggs.maxDepth / 6; // a fraction of one leaf-cell edge
+    if (!this.lastTrailNetPos || this.lastTrailNetPos.distanceTo(pos) >= minStep) {
+      this.lastTrailNetPos = pos.clone();
+      this.planet.appendNetTrailPoint(pos.x, pos.y);
+    }
+  }
+
+  /**
+   * The character's exact continuous position mapped into net-space, not just its
+   * current cell's centroid — computed via barycentric weights against the cell's
+   * real (flat) 3D triangle, applied to that same cell's net-space triangle. Verified
+   * to be smooth across cell boundaries (~0.0015 unit max jump between adjacent
+   * depth-3 cells, vs. a ~5.5 unit leaf-cell edge) — the path trail and camera both
+   * rely on that continuity.
+   */
+  private continuousNetPosition(cell: DGGSCell): THREE.Vector2 {
+    const [a, b, c] = cell.vertices; // [vertex, west, east], on the unit sphere
+    const bary = this.barycentricWeights(this.unitPosition, a, b, c);
     const tri = getNetTriangle(cell.faceIndex, cell.path);
     return new THREE.Vector2()
-      .add(tri.vertex)
-      .add(tri.west)
-      .add(tri.east)
-      .multiplyScalar(1 / 3);
+      .addScaledVector(tri.vertex, bary.x)
+      .addScaledVector(tri.west, bary.y)
+      .addScaledVector(tri.east, bary.z);
+  }
+
+  private barycentricWeights(p: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3): THREE.Vector3 {
+    const v0 = new THREE.Vector3().subVectors(b, a);
+    const v1 = new THREE.Vector3().subVectors(c, a);
+    const v2 = new THREE.Vector3().subVectors(p, a);
+    const d00 = v0.dot(v0);
+    const d01 = v0.dot(v1);
+    const d11 = v1.dot(v1);
+    const d20 = v2.dot(v0);
+    const d21 = v2.dot(v1);
+    const denom = d00 * d11 - d01 * d01;
+    const v = (d11 * d20 - d01 * d21) / denom;
+    const w = (d00 * d21 - d01 * d20) / denom;
+    return new THREE.Vector3(1 - v - w, v, w);
   }
 
   private updateCamera(dt: number) {
@@ -418,6 +481,10 @@ export class SphericalCharacterController {
     this.verticalHeight = 0;
     this.verticalVelocity = 0;
     this.updatePositionVectors();
+
+    // A teleport shouldn't draw a straight line across the net connecting the old trail to the new spot.
+    this.lastTrailNetPos = null;
+    this.planet.clearNetTrail();
 
     const { targetCamPos, targetLookAt } = this.computeCameraTargets();
     this.currentCameraPos.copy(targetCamPos);

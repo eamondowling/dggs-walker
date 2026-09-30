@@ -16,6 +16,10 @@ const BIOME_TEXTURE_URLS: Record<string, string> = {
 
 const textureLoader = new THREE.TextureLoader();
 
+// Net-view walking trail: caps out after this many recorded points (oldest drop off),
+// enough for a long session (planet circumference is ~264 units at radius 42).
+const NET_TRAIL_MAX_POINTS = 5000;
+
 // World-space size (in scene units) one texture tile covers — tuned against the
 // ~6-unit edge length of a depth-3 leaf cell at radius 42.
 const TRIPLANAR_TILE_SIZE = 12;
@@ -119,6 +123,8 @@ export class DGGSPlanet {
   public beacons: BeaconState[] = [];
   public netGroup: THREE.Group;
   public netActiveCellHighlight: THREE.LineLoop;
+  public netTrailLine: THREE.Line;
+  private netTrailPoints: THREE.Vector2[] = [];
 
   constructor(radius = 42, depth: number = DEFAULT_DGGS_DEPTH) {
     this.radius = radius;
@@ -155,6 +161,53 @@ export class DGGSPlanet {
     // icon that doesn't read as a place on the map.
     this.netActiveCellHighlight = this.buildActiveCellHighlight();
     this.netGroup.add(this.netActiveCellHighlight);
+
+    // 7. Walking trail: builds up as the character moves, so opening the net view
+    // shows where you've actually been, not just where you are right now.
+    this.netTrailLine = this.buildNetTrailLine();
+    this.netGroup.add(this.netTrailLine);
+  }
+
+  private buildNetTrailLine(): THREE.Line {
+    const positions = new Float32Array(NET_TRAIL_MAX_POINTS * 3);
+    const geometry = new THREE.BufferGeometry();
+    const posAttr = new THREE.Float32BufferAttribute(positions, 3);
+    posAttr.setUsage(THREE.DynamicDrawUsage);
+    geometry.setAttribute('position', posAttr);
+    geometry.setDrawRange(0, 0);
+
+    const material = new THREE.LineBasicMaterial({
+      color: 0xef4444,
+      transparent: true,
+      opacity: 0.85,
+      depthTest: false,
+    });
+
+    const line = new THREE.Line(geometry, material);
+    line.renderOrder = 9; // under the active-cell highlight (10), above the terrain
+    line.frustumCulled = false;
+    return line;
+  }
+
+  /** Appends one point (net-local, already scaled) to the walking trail, dropping the oldest once full. */
+  public appendNetTrailPoint(x: number, y: number) {
+    this.netTrailPoints.push(new THREE.Vector2(x, y));
+    if (this.netTrailPoints.length > NET_TRAIL_MAX_POINTS) {
+      this.netTrailPoints.shift();
+    }
+
+    const posAttr = this.netTrailLine.geometry.getAttribute('position') as THREE.BufferAttribute;
+    for (let i = 0; i < this.netTrailPoints.length; i++) {
+      const p = this.netTrailPoints[i];
+      posAttr.setXYZ(i, p.x, p.y, 2.5);
+    }
+    posAttr.needsUpdate = true;
+    this.netTrailLine.geometry.setDrawRange(0, this.netTrailPoints.length);
+  }
+
+  public clearNetTrail() {
+    this.netTrailPoints = [];
+    this.netTrailLine.geometry.setDrawRange(0, 0);
   }
 
   /** Mirrors updateActiveCell, but for the flat net's leaf-cell outline. */
