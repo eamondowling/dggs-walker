@@ -21,8 +21,11 @@ recursive subdivision, tile normals, spherical navigation — more than it is a 
 - 12 beacons at the icosahedron's base vertices to find, numbered to match the same
   DGGS convention as the faces (0 = north pole, 1-5 upper ring, 6-10 lower ring,
   11 = south pole).
-- Procedural per-cell biome coloring, and independent wireframe visibility toggles
-  for each subdivision depth (D0-D3).
+- 5 biome textures (AI-generated locally via ComfyUI + Z-Image-Turbo, see
+  [tools/generate_textures.py](tools/generate_textures.py)), mapped one whole
+  texture per triangular facet, tinted by the same per-cell color hash used for
+  facet legibility. Independent wireframe visibility toggles for each
+  subdivision depth (D0-D3).
 
 See [docs/dggs-spec.md](docs/dggs-spec.md) for the full face/beacon numbering
 spec, including the adjacency graph and a couple of verified quirks (the
