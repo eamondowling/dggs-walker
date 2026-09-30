@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { DGGSStructure, DGGSCell, getBiomeForNormal } from './icosahedron';
+import { DGGSStructure, DGGSCell, getBiomeForNormal, DEFAULT_DGGS_DEPTH } from './icosahedron';
 
 const BIOME_TEXTURE_URLS: Record<string, string> = {
   'Calcite Polar Glade': '/textures/calcite-polar-glade.png',
@@ -84,14 +84,16 @@ varying vec3 vTriplanarObjectNormal;`,
   return material;
 }
 
-export interface PlanetOptions {
-  radius: number;
-  showDepth0Wire: boolean;
-  showDepth1Wire: boolean;
-  showDepth2Wire: boolean;
-  showDepth3Wire: boolean;
-  wireframeOpacity: number;
-}
+// Color/opacity per wireframe depth layer, outermost (coarsest) to innermost (finest).
+// Falls back to repeating the last entry if maxDepth ever exceeds this list.
+const WIREFRAME_STYLE_BY_DEPTH: { color: number; opacity: number }[] = [
+  { color: 0xf59e0b, opacity: 0.9 }, // Gold
+  { color: 0x06b6d4, opacity: 0.6 }, // Cyan
+  { color: 0xa855f7, opacity: 0.45 }, // Violet
+  { color: 0xffffff, opacity: 0.3 }, // White/grid
+  { color: 0xec4899, opacity: 0.2 }, // Pink
+  { color: 0x94a3b8, opacity: 0.15 }, // Slate
+];
 
 export interface BeaconState {
   index: number;
@@ -107,32 +109,26 @@ export class DGGSPlanet {
   public dggs: DGGSStructure;
   public radius: number;
   public terrainGroup: THREE.Group;
-  public depth0Lines: THREE.LineSegments;
-  public depth1Lines: THREE.LineSegments;
-  public depth2Lines: THREE.LineSegments;
-  public depth3Lines: THREE.LineSegments;
+  public wireframeLayers: THREE.LineSegments[] = [];
   public activeCellHighlight: THREE.LineLoop;
   public beacons: BeaconState[] = [];
 
-  constructor(radius = 42) {
+  constructor(radius = 42, depth: number = DEFAULT_DGGS_DEPTH) {
     this.radius = radius;
     this.group = new THREE.Group();
-    this.dggs = new DGGSStructure();
+    this.dggs = new DGGSStructure(depth);
 
     // 1. Build Terrain Mesh (one sub-mesh per biome, each with its own texture)
     this.terrainGroup = this.buildTerrainGroup();
     this.group.add(this.terrainGroup);
 
-    // 2. Build DGGS Wireframes for each depth
-    this.depth0Lines = this.buildWireframeForDepth(0, 0xf59e0b, 0.9); // Gold
-    this.depth1Lines = this.buildWireframeForDepth(1, 0x06b6d4, 0.6); // Cyan
-    this.depth2Lines = this.buildWireframeForDepth(2, 0xa855f7, 0.45); // Violet
-    this.depth3Lines = this.buildWireframeForDepth(3, 0xffffff, 0.3); // White/grid
-
-    this.group.add(this.depth0Lines);
-    this.group.add(this.depth1Lines);
-    this.group.add(this.depth2Lines);
-    this.group.add(this.depth3Lines);
+    // 2. Build a DGGS wireframe layer for every depth this structure actually has
+    for (let d = 0; d <= this.dggs.maxDepth; d++) {
+      const style = WIREFRAME_STYLE_BY_DEPTH[Math.min(d, WIREFRAME_STYLE_BY_DEPTH.length - 1)];
+      const lines = this.buildWireframeForDepth(d, style.color, style.opacity);
+      this.wireframeLayers.push(lines);
+      this.group.add(lines);
+    }
 
     // 3. Build Active Cell Highlight
     this.activeCellHighlight = this.buildActiveCellHighlight();
@@ -407,10 +403,9 @@ export class DGGSPlanet {
     }
   }
 
-  public setWireframeVisibility(depth0: boolean, depth1: boolean, depth2: boolean, depth3: boolean) {
-    this.depth0Lines.visible = depth0;
-    this.depth1Lines.visible = depth1;
-    this.depth2Lines.visible = depth2;
-    this.depth3Lines.visible = depth3;
+  public setWireframeVisibility(visibleByDepth: boolean[]) {
+    for (let d = 0; d < this.wireframeLayers.length; d++) {
+      this.wireframeLayers[d].visible = visibleByDepth[d] ?? true;
+    }
   }
 }

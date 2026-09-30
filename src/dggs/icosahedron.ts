@@ -161,19 +161,27 @@ export function getBiomeForNormal(n: THREE.Vector3): { name: string; color: THRE
   }
 }
 
+export const DEFAULT_DGGS_DEPTH = 3;
+
+/** Leaf-cell (or any-depth) face count: 20 base faces, x4 per aperture-4 subdivision level. */
+export function faceCountAtDepth(depth: number): number {
+  return 20 * 4 ** depth;
+}
+
 export class DGGSStructure {
   public baseVertices: THREE.Vector3[];
   public baseFaces: [number, number, number][];
   public cellsByDepth: Map<number, DGGSCell[]> = new Map();
-  public leafCells: DGGSCell[] = []; // Depth 3 (1,280 cells)
-  public maxDepth = 3;
+  public leafCells: DGGSCell[] = []; // Depth `maxDepth`
+  public maxDepth: number;
   public tessellationFactor = 4; // Aperture 4
 
-  constructor() {
+  constructor(depth: number = DEFAULT_DGGS_DEPTH) {
     const { vertices, faces } = createBaseIcosahedron();
     this.baseVertices = vertices;
     this.baseFaces = faces;
-    this.generateDGGS(3);
+    this.maxDepth = depth;
+    this.generateDGGS(depth);
   }
 
   private getMidpoint(a: THREE.Vector3, b: THREE.Vector3): THREE.Vector3 {

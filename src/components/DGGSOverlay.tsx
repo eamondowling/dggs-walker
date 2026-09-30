@@ -1,6 +1,6 @@
 import React from 'react';
 import { CameraMode, CharacterOrientationMode } from '../character/controller';
-import { DGGSCell } from '../dggs/icosahedron';
+import { DGGSCell, faceCountAtDepth } from '../dggs/icosahedron';
 import {
   Volume2,
   VolumeX,
@@ -17,6 +17,17 @@ import {
   Navigation,
 } from 'lucide-react';
 
+// Tailwind classes per wireframe depth button, outermost (coarsest) to innermost (finest).
+// Falls back to repeating the last entry if maxDepth ever exceeds this list.
+const WIREFRAME_BUTTON_STYLE: { active: string; label: string }[] = [
+  { active: 'border-amber-400/80 bg-amber-500/20 text-amber-200', label: 'text-amber-400' },
+  { active: 'border-cyan-400/80 bg-cyan-500/20 text-cyan-200', label: 'text-cyan-400' },
+  { active: 'border-purple-400/80 bg-purple-500/20 text-purple-200', label: 'text-purple-400' },
+  { active: 'border-rose-400/80 bg-rose-500/20 text-rose-200', label: 'text-rose-400' },
+  { active: 'border-pink-400/80 bg-pink-500/20 text-pink-200', label: 'text-pink-400' },
+  { active: 'border-slate-400/80 bg-slate-500/20 text-slate-200', label: 'text-slate-400' },
+];
+
 interface DGGSOverlayProps {
   currentCell: DGGSCell | null;
   latitude: number;
@@ -24,12 +35,14 @@ interface DGGSOverlayProps {
   speed: number;
   beaconsActivated: number;
   totalBeacons: number;
+  dggsDepth: number;
+  leafCellCount: number;
   cameraMode: CameraMode;
   onSelectCameraMode: (mode: CameraMode) => void;
   orientationMode: CharacterOrientationMode;
   onSelectOrientationMode: (mode: CharacterOrientationMode) => void;
-  wireframeDepth: { d0: boolean; d1: boolean; d2: boolean; d3: boolean };
-  onToggleWireframe: (depth: 'd0' | 'd1' | 'd2' | 'd3') => void;
+  wireframeDepth: boolean[];
+  onToggleWireframe: (depth: number) => void;
   soundEnabled: boolean;
   onToggleSound: () => void;
   onResetPosition: () => void;
@@ -45,6 +58,8 @@ export const DGGSOverlay: React.FC<DGGSOverlayProps> = ({
   speed,
   beaconsActivated,
   totalBeacons,
+  dggsDepth,
+  leafCellCount,
   cameraMode,
   onSelectCameraMode,
   orientationMode,
@@ -79,9 +94,9 @@ export const DGGSOverlay: React.FC<DGGSOverlayProps> = ({
         <div className="hidden lg:flex items-center gap-2.5 text-xs text-slate-300 font-mono tabular-nums">
           <span>Aperture 4</span>
           <span className="text-slate-600" aria-hidden="true">·</span>
-          <span>Depth 3</span>
+          <span>Depth {dggsDepth}</span>
           <span className="text-slate-600" aria-hidden="true">·</span>
-          <span>1,280 Tessellated Cells</span>
+          <span>{leafCellCount.toLocaleString()} Tessellated Cells</span>
           <span className="text-slate-600" aria-hidden="true">·</span>
           <span>12 Base Vertices</span>
           <span className="text-slate-600" aria-hidden="true">·</span>
@@ -294,46 +309,20 @@ export const DGGSOverlay: React.FC<DGGSOverlayProps> = ({
             </div>
 
             <div className="grid grid-cols-2 gap-1.5 pt-1">
-              <button
-                onClick={() => onToggleWireframe('d0')}
-                className={`px-2 py-1 text-[11px] font-mono rounded border transition-colors cursor-pointer ${
-                  wireframeDepth.d0
-                    ? 'border-amber-400/80 bg-amber-500/20 text-amber-200'
-                    : 'border-white/10 text-slate-500 hover:border-white/20'
-                }`}
-              >
-                D0 (20 Faces)
-              </button>
-              <button
-                onClick={() => onToggleWireframe('d1')}
-                className={`px-2 py-1 text-[11px] font-mono rounded border transition-colors cursor-pointer ${
-                  wireframeDepth.d1
-                    ? 'border-cyan-400/80 bg-cyan-500/20 text-cyan-200'
-                    : 'border-white/10 text-slate-500 hover:border-white/20'
-                }`}
-              >
-                D1 (80 Faces)
-              </button>
-              <button
-                onClick={() => onToggleWireframe('d2')}
-                className={`px-2 py-1 text-[11px] font-mono rounded border transition-colors cursor-pointer ${
-                  wireframeDepth.d2
-                    ? 'border-purple-400/80 bg-purple-500/20 text-purple-200'
-                    : 'border-white/10 text-slate-500 hover:border-white/20'
-                }`}
-              >
-                D2 (320 Faces)
-              </button>
-              <button
-                onClick={() => onToggleWireframe('d3')}
-                className={`px-2 py-1 text-[11px] font-mono rounded border transition-colors cursor-pointer ${
-                  wireframeDepth.d3
-                    ? 'border-rose-400/80 bg-rose-500/20 text-rose-200'
-                    : 'border-white/10 text-slate-500 hover:border-white/20'
-                }`}
-              >
-                D3 (1,280)
-              </button>
+              {wireframeDepth.map((active, depth) => {
+                const style = WIREFRAME_BUTTON_STYLE[Math.min(depth, WIREFRAME_BUTTON_STYLE.length - 1)];
+                return (
+                  <button
+                    key={depth}
+                    onClick={() => onToggleWireframe(depth)}
+                    className={`px-2 py-1 text-[11px] font-mono rounded border transition-colors cursor-pointer ${
+                      active ? style.active : 'border-white/10 text-slate-500 hover:border-white/20'
+                    }`}
+                  >
+                    D{depth} ({faceCountAtDepth(depth).toLocaleString()} Faces)
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>

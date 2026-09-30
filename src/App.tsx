@@ -4,7 +4,7 @@ import { Trophy } from 'lucide-react';
 import { DGGSPlanet } from './dggs/planet';
 import { BipedCharacter } from './character/biped';
 import { SphericalCharacterController, CameraMode, CharacterOrientationMode } from './character/controller';
-import { DGGSCell } from './dggs/icosahedron';
+import { DGGSCell, DEFAULT_DGGS_DEPTH } from './dggs/icosahedron';
 import { DGGSOverlay } from './components/DGGSOverlay';
 import { soundEngine } from './audio/sound';
 
@@ -26,12 +26,11 @@ export default function App() {
   const [cameraMode, setCameraMode] = useState<CameraMode>('curved_horizon');
   const [orientationMode, setOrientationMode] = useState<CharacterOrientationMode>('tile_normal');
   const [soundEnabled, setSoundEnabled] = useState(true);
-  const [wireframeDepth, setWireframeDepth] = useState({
-    d0: true,
-    d1: true,
-    d2: true,
-    d3: true,
-  });
+  const [wireframeDepth, setWireframeDepth] = useState<boolean[]>(() =>
+    Array(DEFAULT_DGGS_DEPTH + 1).fill(true),
+  );
+  const [dggsDepth, setDggsDepth] = useState(DEFAULT_DGGS_DEPTH);
+  const [leafCellCount, setLeafCellCount] = useState(0);
 
   // Controller reference
   const controllerRef = useRef<SphericalCharacterController | null>(null);
@@ -161,6 +160,9 @@ export default function App() {
     const planet = new DGGSPlanet(42);
     planetRef.current = planet;
     scene.add(planet.group);
+    setDggsDepth(planet.dggs.maxDepth);
+    setLeafCellCount(planet.dggs.leafCells.length);
+    setWireframeDepth(Array(planet.dggs.maxDepth + 1).fill(true));
 
     // 6. Red Sphere Biped Character
     const character = new BipedCharacter();
@@ -380,11 +382,12 @@ export default function App() {
     }
   }, []);
 
-  const handleToggleWireframe = useCallback((depth: 'd0' | 'd1' | 'd2' | 'd3') => {
+  const handleToggleWireframe = useCallback((depth: number) => {
     setWireframeDepth((prev) => {
-      const next = { ...prev, [depth]: !prev[depth] };
+      const next = [...prev];
+      next[depth] = !next[depth];
       if (planetRef.current) {
-        planetRef.current.setWireframeVisibility(next.d0, next.d1, next.d2, next.d3);
+        planetRef.current.setWireframeVisibility(next);
       }
       return next;
     });
@@ -478,6 +481,8 @@ export default function App() {
         speed={telemetry.speed}
         beaconsActivated={beaconsActivated}
         totalBeacons={12}
+        dggsDepth={dggsDepth}
+        leafCellCount={leafCellCount}
         cameraMode={cameraMode}
         onSelectCameraMode={handleSelectCameraMode}
         orientationMode={orientationMode}
