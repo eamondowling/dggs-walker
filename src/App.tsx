@@ -373,6 +373,9 @@ export default function App() {
     if (controllerRef.current) {
       controllerRef.current.setCameraMode(mode);
     }
+    if (planetRef.current) {
+      planetRef.current.setNetViewActive(mode === 'icosahedral_net');
+    }
   }, []);
 
   const handleSelectOrientationMode = useCallback((mode: CharacterOrientationMode) => {

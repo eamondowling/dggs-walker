@@ -1,5 +1,10 @@
 import * as THREE from 'three';
 import { DGGSStructure, DGGSCell, getBiomeForNormal, DEFAULT_DGGS_DEPTH } from './icosahedron';
+import { getNetTriangle, NET_EDGE_CHORD } from './net';
+
+// Where the flat icosahedral-net view sits in world space, well clear of the
+// sphere so the two views never visually overlap while switching between them.
+export const NET_WORLD_OFFSET = new THREE.Vector3(0, -600, 0);
 
 const BIOME_TEXTURE_URLS: Record<string, string> = {
   'Calcite Polar Glade': '/textures/calcite-polar-glade.png',
@@ -112,6 +117,7 @@ export class DGGSPlanet {
   public wireframeLayers: THREE.LineSegments[] = [];
   public activeCellHighlight: THREE.LineLoop;
   public beacons: BeaconState[] = [];
+  public netGroup: THREE.Group;
 
   constructor(radius = 42, depth: number = DEFAULT_DGGS_DEPTH) {
     this.radius = radius;
@@ -136,6 +142,21 @@ export class DGGSPlanet {
 
     // 4. Build 12 Geodesic Beacons at the 12 icosahedron base vertices
     this.buildBeacons();
+
+    // 5. Build the flat unfolded icosahedral-net view, hidden until selected
+    this.netGroup = this.buildNetGroup();
+    this.netGroup.position.copy(NET_WORLD_OFFSET);
+    this.netGroup.visible = false;
+    this.group.add(this.netGroup);
+  }
+
+  /** Swaps visibility between the sphere (terrain/wireframes/beacons) and the flat net view. */
+  public setNetViewActive(active: boolean) {
+    this.terrainGroup.visible = !active;
+    for (const lines of this.wireframeLayers) lines.visible = !active;
+    this.activeCellHighlight.visible = !active;
+    for (const beacon of this.beacons) beacon.meshGroup.visible = !active;
+    this.netGroup.visible = active;
   }
 
   public getTerrainHeight(_unitDir: THREE.Vector3): number {
@@ -181,6 +202,67 @@ export class DGGSPlanet {
         for (let i = 0; i < 3; i++) {
           colors.push(tempColor.r, tempColor.g, tempColor.b);
           normals.push(faceNormal.x, faceNormal.y, faceNormal.z);
+        }
+      }
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+      geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+
+      const texture = textureLoader.load(BIOME_TEXTURE_URLS[biomeName]);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.RepeatWrapping;
+
+      const material = createTriplanarMaterial(texture);
+
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.frustumCulled = false;
+      group.add(mesh);
+    }
+
+    return group;
+  }
+
+  /**
+   * Flat unfolded icosahedral net: the same leaf cells, biome colors, and
+   * textures as the sphere, but laid out as 20 flat triangles (see net.ts)
+   * instead of projected onto the globe. Scaled so one net edge equals one
+   * real base-face edge on the sphere, so texture density matches.
+   */
+  private buildNetGroup(): THREE.Group {
+    const netScale = this.radius * NET_EDGE_CHORD;
+
+    const cellsByBiome = new Map<string, DGGSCell[]>();
+    for (const cell of this.dggs.leafCells) {
+      const biomeName = getBiomeForNormal(cell.normal).name;
+      const bucket = cellsByBiome.get(biomeName);
+      if (bucket) bucket.push(cell);
+      else cellsByBiome.set(biomeName, [cell]);
+    }
+
+    const group = new THREE.Group();
+    const tempColor = new THREE.Color();
+
+    for (const [biomeName, cells] of cellsByBiome) {
+      const positions: number[] = [];
+      const colors: number[] = [];
+      const normals: number[] = [];
+
+      for (const cell of cells) {
+        const { vertex, west, east } = getNetTriangle(cell.faceIndex, cell.path);
+        const biome = getBiomeForNormal(cell.normal);
+
+        // Slight cell color variation for crisp DGGS facet legibility (tints the texture) —
+        // identical formula to buildTerrainGroup, so the same cell reads the same color in both views.
+        const hash = Math.sin(cell.faceIndex * 133.7 + (cell.path[0] || 0) * 17.3 + (cell.path[1] || 0) * 7.1) * 0.04;
+        tempColor.copy(biome.color).offsetHSL(hash, 0, hash);
+
+        for (const p of [vertex, west, east]) {
+          positions.push(p.x * netScale, p.y * netScale, 0);
+          colors.push(tempColor.r, tempColor.g, tempColor.b);
+          normals.push(0, 0, 1);
         }
       }
 

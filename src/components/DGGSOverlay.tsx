@@ -285,6 +285,7 @@ export const DGGSOverlay: React.FC<DGGSOverlayProps> = ({
                 { id: 'close_third', label: 'Close 3rd' },
                 { id: 'wide_panoramic', label: 'Panoramic' },
                 { id: 'orbital_planet', label: 'Orbital DGGS' },
+                { id: 'icosahedral_net', label: 'Net View' },
               ] as const
             ).map((mode) => (
               <button

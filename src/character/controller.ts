@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { BipedCharacter } from './biped';
-import { DGGSPlanet } from '../dggs/planet';
+import { DGGSPlanet, NET_WORLD_OFFSET } from '../dggs/planet';
+import { NET_EDGE_CHORD, NET_LAYOUT_CENTER } from '../dggs/net';
 
-export type CameraMode = 'curved_horizon' | 'close_third' | 'wide_panoramic' | 'orbital_planet';
+export type CameraMode = 'curved_horizon' | 'close_third' | 'wide_panoramic' | 'orbital_planet' | 'icosahedral_net';
 export type CharacterOrientationMode = 'tile_normal' | 'camera_top' | 'radial_gravity';
 
 export interface CameraPreset {
@@ -17,6 +18,7 @@ export const CAMERA_PRESETS: Record<CameraMode, CameraPreset> = {
   close_third: { distance: 3.8, height: 1.6, pitch: 15, fov: 60 },
   wide_panoramic: { distance: 11.5, height: 4.8, pitch: 24, fov: 72 },
   orbital_planet: { distance: 120.0, height: 35.0, pitch: 35, fov: 50 },
+  icosahedral_net: { distance: 220.0, height: 0, pitch: 0, fov: 55 },
 };
 
 export class FootstepParticles {
@@ -217,6 +219,15 @@ export class SphericalCharacterController {
       const targetCamPos = orbitDir.multiplyScalar(this.planet.radius + preset.distance);
       const targetLookAt = new THREE.Vector3(0, 0, 0);
       return { targetCamPos, targetLookAt };
+    } else if (this.cameraMode === 'icosahedral_net') {
+      // Fixed view of the flat unfolded net — not character-relative at all,
+      // since it's a separate static layout parked well away from the sphere.
+      const netScale = this.planet.radius * NET_EDGE_CHORD;
+      const targetLookAt = NET_WORLD_OFFSET.clone().add(
+        new THREE.Vector3(NET_LAYOUT_CENTER.x * netScale, NET_LAYOUT_CENTER.y * netScale, 0),
+      );
+      const targetCamPos = targetLookAt.clone().add(new THREE.Vector3(0, 0, preset.distance));
+      return { targetCamPos, targetLookAt };
     } else {
       // The camera naturally tracks behind the character's facing direction
       // with mouse-controlled orbit azimuth and pitch
@@ -394,7 +405,7 @@ export class SphericalCharacterController {
     const { targetCamPos, targetLookAt } = this.computeCameraTargets();
 
     // Smooth damping for position and look-at
-    const dampSpeed = this.cameraMode === 'orbital_planet' ? 4 : 14;
+    const dampSpeed = this.cameraMode === 'orbital_planet' ? 4 : this.cameraMode === 'icosahedral_net' ? 8 : 14;
     this.currentCameraPos.x = THREE.MathUtils.damp(this.currentCameraPos.x, targetCamPos.x, dampSpeed, dt);
     this.currentCameraPos.y = THREE.MathUtils.damp(this.currentCameraPos.y, targetCamPos.y, dampSpeed, dt);
     this.currentCameraPos.z = THREE.MathUtils.damp(this.currentCameraPos.z, targetCamPos.z, dampSpeed, dt);
@@ -404,7 +415,7 @@ export class SphericalCharacterController {
     this.currentLookAt.z = THREE.MathUtils.damp(this.currentLookAt.z, targetLookAt.z, dampSpeed, dt);
 
     this.camera.position.copy(this.currentCameraPos);
-    this.camera.up.copy(this.characterUp);
+    this.camera.up.copy(this.cameraMode === 'icosahedral_net' ? new THREE.Vector3(0, 1, 0) : this.characterUp);
     this.camera.lookAt(this.currentLookAt);
     this.currentCameraQuat.copy(this.camera.quaternion);
   }
