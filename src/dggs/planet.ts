@@ -125,6 +125,14 @@ export class DGGSPlanet {
   public netActiveCellHighlight: THREE.LineLoop;
   public netTrailLine: THREE.LineSegments;
   private netTrailPoints: THREE.Vector2[] = [];
+  // Local flat patch: the current leaf tile + the 12 tiles sharing a corner with it,
+  // flattened onto the plane tangent to the sphere at the character and rebuilt every frame.
+  public localPatchGroup: THREE.Group;
+  private localPatchMeshes = new Map<string, THREE.Mesh>();
+  private localPatchEdges: THREE.LineSegments;
+  private localPatchCenterOutline: THREE.LineLoop;
+  private localPatchCenterId = '';
+  private localPatchCells: { cell: DGGSCell; tint: THREE.Color }[] = [];
 
   constructor(radius = 42, depth: number = DEFAULT_DGGS_DEPTH) {
     this.radius = radius;
@@ -166,6 +174,180 @@ export class DGGSPlanet {
     // shows where you've actually been, not just where you are right now.
     this.netTrailLine = this.buildNetTrailLine();
     this.netGroup.add(this.netTrailLine);
+
+    // 8. Local flat patch (current tile + surrounding 12), hidden until selected
+    this.localPatchGroup = this.buildLocalPatchGroup();
+    this.localPatchGroup.visible = false;
+    this.localPatchEdges = this.localPatchGroup.getObjectByName('patchEdges') as THREE.LineSegments;
+    this.localPatchCenterOutline = this.localPatchGroup.getObjectByName('patchCenter') as THREE.LineLoop;
+    this.group.add(this.localPatchGroup);
+  }
+
+  private buildLocalPatchGroup(): THREE.Group {
+    const group = new THREE.Group();
+    const maxVerts = 13 * 3;
+
+    for (const biomeName of Object.keys(BIOME_TEXTURE_URLS)) {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(maxVerts * 3), 3));
+      geometry.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(maxVerts * 3), 3));
+      // RGBA: alpha carries the distance fade toward the patch's outer edge.
+      geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(maxVerts * 4), 4));
+      geometry.setDrawRange(0, 0);
+
+      const texture = textureLoader.load(BIOME_TEXTURE_URLS[biomeName]);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.RepeatWrapping;
+
+      const material = createTriplanarMaterial(texture);
+      material.transparent = true;
+
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.frustumCulled = false;
+      this.localPatchMeshes.set(biomeName, mesh);
+      group.add(mesh);
+    }
+
+    const edgeGeometry = new THREE.BufferGeometry();
+    edgeGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(13 * 6 * 3), 3));
+    edgeGeometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(13 * 6 * 3), 3));
+    edgeGeometry.setDrawRange(0, 0);
+    const edges = new THREE.LineSegments(
+      edgeGeometry,
+      new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.55 }),
+    );
+    edges.name = 'patchEdges';
+    edges.frustumCulled = false;
+    group.add(edges);
+
+    const center = this.buildActiveCellHighlight();
+    center.name = 'patchCenter';
+    group.add(center);
+
+    return group;
+  }
+
+  /** Current leaf tile plus every leaf tile sharing at least one corner with it (12, or 11 at a beacon). */
+  private findPatchCells(center: DGGSCell): { cell: DGGSCell; tint: THREE.Color }[] {
+    const result: { cell: DGGSCell; tint: THREE.Color }[] = [];
+    for (const cell of this.dggs.leafCells) {
+      let shares = cell === center;
+      for (let i = 0; i < 3 && !shares; i++) {
+        for (let j = 0; j < 3; j++) {
+          if (cell.vertices[i].distanceToSquared(center.vertices[j]) < 1e-5) {
+            shares = true;
+            break;
+          }
+        }
+      }
+      if (!shares) continue;
+
+      // Same per-cell tint as the sphere terrain, so a tile keeps its look in both views.
+      const biome = getBiomeForNormal(cell.normal);
+      const hash = Math.sin(cell.faceIndex * 133.7 + (cell.path[0] || 0) * 17.3 + (cell.path[1] || 0) * 7.1) * 0.04;
+      result.push({ cell, tint: biome.color.clone().offsetHSL(hash, 0, hash) });
+    }
+    return result;
+  }
+
+  /**
+   * Re-flattens the patch around the character's exact position every frame, using an
+   * azimuthal-equidistant projection onto the tangent plane there: each patch corner
+   * keeps its true geodesic distance and bearing from the character. The 5-valent
+   * beacon corners need no special case — the 5 tiles around one genuinely span 360°,
+   * so they come out fatter in angle (72° vs 60°) automatically.
+   */
+  public updateLocalPatch(unitPos: THREE.Vector3, centerCell: DGGSCell) {
+    if (!this.localPatchGroup.visible) return;
+    if (centerCell.id !== this.localPatchCenterId) {
+      this.localPatchCenterId = centerCell.id;
+      this.localPatchCells = this.findPatchCells(centerCell);
+    }
+
+    const R = this.radius;
+    const leafEdge = (R * NET_EDGE_CHORD) / 2 ** this.dggs.maxDepth;
+    const fadeStart = leafEdge * 1.0;
+    const fadeEnd = leafEdge * 2.2;
+    const base = unitPos.clone().multiplyScalar(R);
+    const lift = unitPos.clone().multiplyScalar(0.06);
+
+    const project = (v: THREE.Vector3): { pos: THREE.Vector3; alpha: number } => {
+      const cosT = THREE.MathUtils.clamp(unitPos.dot(v), -1, 1);
+      const dist = R * Math.acos(cosT);
+      const tangent = v.clone().addScaledVector(unitPos, -cosT);
+      const len = tangent.length();
+      const pos = base.clone();
+      if (len > 1e-9) pos.addScaledVector(tangent, dist / len);
+      const alpha = THREE.MathUtils.clamp((fadeEnd - dist) / (fadeEnd - fadeStart), 0, 1);
+      return { pos, alpha };
+    };
+
+    const counts = new Map<string, number>();
+    const edgePos = this.localPatchEdges.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const edgeCol = this.localPatchEdges.geometry.getAttribute('color') as THREE.BufferAttribute;
+    let edgeVerts = 0;
+
+    for (const { cell, tint } of this.localPatchCells) {
+      const mesh = this.localPatchMeshes.get(cell.biome);
+      if (!mesh) continue;
+      const geom = mesh.geometry;
+      const posAttr = geom.getAttribute('position') as THREE.BufferAttribute;
+      const nrmAttr = geom.getAttribute('normal') as THREE.BufferAttribute;
+      const colAttr = geom.getAttribute('color') as THREE.BufferAttribute;
+      const start = (counts.get(cell.biome) ?? 0) * 3;
+
+      const pts = cell.vertices.map(project);
+      for (let k = 0; k < 3; k++) {
+        const { pos, alpha } = pts[k];
+        posAttr.setXYZ(start + k, pos.x, pos.y, pos.z);
+        nrmAttr.setXYZ(start + k, unitPos.x, unitPos.y, unitPos.z);
+        colAttr.setXYZW(start + k, tint.r, tint.g, tint.b, alpha);
+      }
+      counts.set(cell.biome, start / 3 + 1);
+
+      for (let k = 0; k < 3; k++) {
+        const a = pts[k];
+        const b = pts[(k + 1) % 3];
+        const pa = a.pos.clone().add(lift);
+        const pb = b.pos.clone().add(lift);
+        edgePos.setXYZ(edgeVerts, pa.x, pa.y, pa.z);
+        edgeCol.setXYZ(edgeVerts, a.alpha, a.alpha, a.alpha);
+        edgeVerts++;
+        edgePos.setXYZ(edgeVerts, pb.x, pb.y, pb.z);
+        edgeCol.setXYZ(edgeVerts, b.alpha, b.alpha, b.alpha);
+        edgeVerts++;
+      }
+    }
+
+    for (const [name, mesh] of this.localPatchMeshes) {
+      const n = counts.get(name) ?? 0;
+      mesh.geometry.setDrawRange(0, n * 3);
+      for (const attr of ['position', 'normal', 'color']) {
+        (mesh.geometry.getAttribute(attr) as THREE.BufferAttribute).needsUpdate = true;
+      }
+    }
+    edgePos.needsUpdate = true;
+    edgeCol.needsUpdate = true;
+    this.localPatchEdges.geometry.setDrawRange(0, edgeVerts);
+
+    const outline = this.localPatchCenterOutline.geometry.getAttribute('position') as THREE.BufferAttribute;
+    centerCell.vertices.forEach((v, k) => {
+      const p = project(v).pos.add(lift).addScaledVector(unitPos, 0.04);
+      outline.setXYZ(k, p.x, p.y, p.z);
+    });
+    outline.needsUpdate = true;
+  }
+
+  /** Shows/hides the local flat patch; entering it hides the sphere view's terrain, grid and beacons. */
+  public setLocalPatchActive(active: boolean) {
+    this.localPatchGroup.visible = active;
+    if (!active) return;
+    this.localPatchCenterId = '';
+    this.terrainGroup.visible = false;
+    for (const lines of this.wireframeLayers) lines.visible = false;
+    this.activeCellHighlight.visible = false;
+    for (const beacon of this.beacons) beacon.meshGroup.visible = false;
   }
 
   private buildNetTrailLine(): THREE.LineSegments {

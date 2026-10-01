@@ -177,7 +177,6 @@ export default function App() {
     const controller = new SphericalCharacterController(character, planet, camera);
     controllerRef.current = controller;
     scene.add(controller.particles.mesh);
-
     // Connect audio callbacks to controller
     const origOnFootstep = character.onFootstep;
     character.onFootstep = (pos, isLeft) => {
@@ -390,6 +389,7 @@ export default function App() {
     }
     if (planetRef.current) {
       planetRef.current.setNetViewActive(mode === 'icosahedral_net');
+      planetRef.current.setLocalPatchActive(mode === 'local_patch');
     }
   }, []);
 

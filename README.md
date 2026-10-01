@@ -16,9 +16,10 @@ recursive subdivision, tile normals, spherical navigation — more than it is a 
   adjacency (north cap, two offset middle bands, south cap) and a consistent
   medial/vertex/west/east sub-cell index at every depth.
 - Spherical character controller: curvature-aligned gravity (radial — always
-  upright to the planet center), great-circle movement, and 5 camera modes
-  (curved 3rd, close 3rd, wide panoramic, orbital, and a flat unfolded
-  icosahedral net view).
+  upright to the planet center), great-circle movement, and 6 camera modes
+  (curved 3rd, close 3rd, wide panoramic, orbital, a flat unfolded
+  icosahedral net view, and a "Local Flat" close-3rd view that flattens the
+  current tile and the 12 around it onto a plane).
 - 12 beacons at the icosahedron's base vertices to find, numbered to match the same
   DGGS convention as the faces (0 = north pole, 1-5 upper ring, 6-10 lower ring,
   11 = south pole).

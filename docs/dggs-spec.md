@@ -173,6 +173,24 @@ a second, separate net-space copy where the strip's right end doesn't
 rejoin its left end) — normal for any net, including real cardboard
 icosahedron kits.
 
+## Local flat patch ("Local Flat" camera mode)
+
+A close-3rd-style chase view of flat ground made of the current depth-3 tile plus
+every tile sharing at least one corner with it: 3 edge-neighbors + 9 corner-only
+neighbors = 12 surrounding tiles (13 with the current one). It is rebuilt every
+frame by an azimuthal-equidistant projection onto the plane tangent to the sphere
+at the character's exact position, so each corner keeps its true geodesic distance
+and bearing from the character, and nothing jumps when the current tile changes
+(only which tiles are included does, at the faded outer edge).
+
+The 12 base vertices (beacons) need no special rule: only 5 tiles meet there
+instead of 6, so the 5 tiles around one subtend ~72° each in the patch instead of
+~60° (verified: 71.8-72.2°, summing to 360°), and a tile that has a beacon as a
+corner has 11 surrounding tiles instead of 12. This applies to 60 of the 1,280
+depth-3 tiles. Beacons are hidden in this view, and the patch is flat while the
+sphere curves away, so tiles far from the character are slightly distorted;
+the outer ring fades out.
+
 ## Adjacency graph
 
 Every vertex has exactly 5 neighbors (regular icosahedron, degree 5

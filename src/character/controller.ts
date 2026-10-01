@@ -4,7 +4,7 @@ import { DGGSPlanet, NET_WORLD_OFFSET } from '../dggs/planet';
 import { getNetTriangle, NET_EDGE_CHORD } from '../dggs/net';
 import { DGGSCell } from '../dggs/icosahedron';
 
-export type CameraMode = 'curved_horizon' | 'close_third' | 'wide_panoramic' | 'orbital_planet' | 'icosahedral_net';
+export type CameraMode = 'curved_horizon' | 'close_third' | 'wide_panoramic' | 'orbital_planet' | 'icosahedral_net' | 'local_patch';
 
 export interface CameraPreset {
   distance: number;
@@ -19,6 +19,7 @@ export const CAMERA_PRESETS: Record<CameraMode, CameraPreset> = {
   wide_panoramic: { distance: 11.5, height: 4.8, pitch: 24, fov: 72 },
   orbital_planet: { distance: 120.0, height: 35.0, pitch: 35, fov: 50 },
   icosahedral_net: { distance: 60.0, height: 0, pitch: 0, fov: 55 },
+  local_patch: { distance: 4.6, height: 2.0, pitch: 18, fov: 60 },
 };
 
 // Per-view control mapping layer: raw key input (+1/-1) is multiplied by these before
@@ -36,6 +37,7 @@ export const CONTROL_MAPPINGS: Record<CameraMode, ControlMapping> = {
   wide_panoramic: { turn: 1, forward: 1 },
   orbital_planet: { turn: 1, forward: 1 },
   icosahedral_net: { turn: 1, forward: 1 },
+  local_patch: { turn: 1, forward: 1 },
 };
 
 export class FootstepParticles {
@@ -422,6 +424,7 @@ export class SphericalCharacterController {
     this.currentDGGSCell = this.planet.dggs.findCellAtPosition(this.unitPosition);
     this.planet.updateNetActiveCell(this.currentDGGSCell);
     this.recordNetTrailPoint(this.currentDGGSCell);
+    if (this.cameraMode === 'local_patch') this.planet.updateLocalPatch(this.unitPosition, this.currentDGGSCell);
 
     // 7. Smooth Camera Rig
     this.updateCamera(dt);
