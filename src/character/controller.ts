@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { BipedCharacter } from './biped';
 import { DGGSPlanet, NET_WORLD_OFFSET } from '../dggs/planet';
-import { getNetTriangle, NET_EDGE_CHORD } from '../dggs/net';
+import { getNetTriangle, NET_EDGE_CHORD, NET_LAYOUT_CENTER, NET_LAYOUT_SIZE } from '../dggs/net';
 import { DGGSCell } from '../dggs/icosahedron';
 
 export type CameraMode = 'curved_horizon' | 'close_third' | 'wide_panoramic' | 'orbital_planet' | 'icosahedral_net' | 'local_patch';
@@ -155,6 +155,8 @@ export class SphericalCharacterController {
   // Drag-to-pan offset (world units) for icosahedral_net mode, letting the view
   // slide away from the character to browse the rest of the map.
   public netPanOffset: THREE.Vector2 = new THREE.Vector2();
+  // Net-view wheel zoom as a fraction of the fit-everything distance (1 = whole net).
+  public netZoom = 1;
   public currentCameraPos: THREE.Vector3 = new THREE.Vector3();
   public currentLookAt: THREE.Vector3 = new THREE.Vector3();
   public currentCameraQuat: THREE.Quaternion = new THREE.Quaternion();
@@ -233,17 +235,17 @@ export class SphericalCharacterController {
       const targetLookAt = new THREE.Vector3(0, 0, 0);
       return { targetCamPos, targetLookAt };
     } else if (this.cameraMode === 'icosahedral_net') {
-      // Defaults to following the character's continuous position on the flat
-      // unfolded net (not the net's geometric center) so the "you are here"
-      // highlight is always in view — but netPanOffset (mouse-drag) can slide
-      // the look-at away from that to browse the rest of the map. Mouse wheel
-      // (cameraDistanceOffset) zooms between a single-face close-up and a wide
-      // view of several surrounding faces.
+      // Always opens as a global view: the whole net, centered and fitted to the screen.
+      // Zooming in (wheel, netZoom < 1) slides the focus from the net's center toward
+      // the character's position so a zoomed view lands on where you are; netPanOffset
+      // (mouse-drag) browses from there. Both reset whenever the mode is entered.
       const netScale = this.planet.radius * NET_EDGE_CHORD;
       const cell = this.currentDGGSCell ?? this.planet.dggs.findCellAtPosition(this.unitPosition);
-      const { x, y } = this.continuousNetPosition(cell);
+      const character = this.continuousNetPosition(cell);
+      const t = THREE.MathUtils.smoothstep((1 - this.netZoom) / 0.65, 0, 1);
+      const focus = NET_LAYOUT_CENTER.clone().lerp(character, t);
       const targetLookAt = NET_WORLD_OFFSET.clone().add(
-        new THREE.Vector3(x * netScale + this.netPanOffset.x, y * netScale + this.netPanOffset.y, 0),
+        new THREE.Vector3(focus.x * netScale + this.netPanOffset.x, focus.y * netScale + this.netPanOffset.y, 0),
       );
       const targetCamPos = targetLookAt.clone().add(new THREE.Vector3(0, 0, this.netCameraDistance()));
       return { targetCamPos, targetLookAt };
@@ -278,9 +280,14 @@ export class SphericalCharacterController {
     this.cameraPitch = preset.pitch * (Math.PI / 180);
     this.cameraDistanceOffset = 0;
     this.netPanOffset.set(0, 0);
+    this.netZoom = 1;
   }
 
   public handleWheel(deltaY: number) {
+    if (this.cameraMode === 'icosahedral_net') {
+      this.netZoom = THREE.MathUtils.clamp(this.netZoom * Math.exp(deltaY * 0.0015), 0.12, 1);
+      return;
+    }
     this.cameraDistanceOffset = THREE.MathUtils.clamp(
       this.cameraDistanceOffset + deltaY * 0.005,
       -2.0,
@@ -288,9 +295,17 @@ export class SphericalCharacterController {
     );
   }
 
-  /** icosahedral_net's zoom distance, shared between the camera target and pan-drag scaling. */
+  /**
+   * Net view's camera distance, shared between the camera target and pan-drag scaling:
+   * the distance that fits the whole net on screen (for the current aspect ratio),
+   * scaled by the wheel zoom.
+   */
   private netCameraDistance(): number {
-    return THREE.MathUtils.clamp(CAMERA_PRESETS.icosahedral_net.distance + this.cameraDistanceOffset * 15, 20, 260);
+    const netScale = this.planet.radius * NET_EDGE_CHORD;
+    const tanHalfFov = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
+    const fitHeight = (NET_LAYOUT_SIZE.y * netScale * 1.15) / (2 * tanHalfFov);
+    const fitWidth = (NET_LAYOUT_SIZE.x * netScale * 1.12) / (this.camera.aspect * 2 * tanHalfFov);
+    return Math.max(fitHeight, fitWidth) * this.netZoom;
   }
 
   private updatePositionVectors() {
@@ -314,9 +329,9 @@ export class SphericalCharacterController {
       // fraction of the view whether zoomed into one face or out at the whole net.
       const panSensitivity = 0.003;
       const scale = this.netCameraDistance() * panSensitivity;
-      // Matches the ground-view orbit camera's feel (drag right -> view swings right,
-      // content shifts left) rather than a literal "drag the map" convention.
-      this.netPanOffset.x += deltaX * scale;
+      // "Grab the map" on both axes: the content follows the cursor (screen +x is world +x,
+      // screen-down is world -y, so the look-at moves opposite in x and the same in y).
+      this.netPanOffset.x -= deltaX * scale;
       this.netPanOffset.y += deltaY * scale;
       return;
     }

@@ -26,6 +26,9 @@ const H = Math.sqrt(3) / 2; // height of a unit equilateral triangle
 // Center of the net's bounding box in net-space units (x:[0,5.5], y:[-H,2H]).
 export const NET_LAYOUT_CENTER = new THREE.Vector2(2.75, H / 2);
 
+// Width and height of that bounding box, in the same units.
+export const NET_LAYOUT_SIZE = new THREE.Vector2(5.5, 3 * H);
+
 export interface NetTriangle {
   vertex: THREE.Vector2;
   west: THREE.Vector2;
