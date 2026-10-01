@@ -140,13 +140,15 @@ exact, undistorted flat triangle; the only "distortion" is conceptual,
 at the fold lines between faces, rather than smoothly smeared across
 the whole surface the way Mercator or equirectangular projections are.
 
-The net is drawn as seen from outside the sphere, so it has the same
-handedness as the 3D cells: Face 0 (the north cap face the walker spawns
-on) sits at the right end of the top row, and the faces run right-to-left
-as their numbers increase. A cell's winding in the net matches its winding
-on the sphere viewed from outside (verified for every base face and a
-spread of sub-cells; an earlier version of the layout was a mirror image,
-which made left/right turns read backwards on the map).
+The net is laid out in reading order: faces 0-4 left to right in the top
+row (north cap), 5-9 in the next row (upper band), 10-14 in the next
+(lower band), and 15-19 in the last (south cap). Because face numbers
+increase westward on the sphere, this layout is a mirror image of the
+sphere seen from outside (verified: every cell's winding in the net is
+opposite to its winding on the sphere), i.e. it reads like the view from
+inside. A left/right turn therefore looks reversed on the map, so the
+net view has its own control mapping (`CONTROL_MAPPINGS` in
+`src/character/controller.ts`) that flips A/D there.
 
 Because the net has no curvature to account for, subdividing it is
 exact plane geometry — no per-level renormalization like the real 3D

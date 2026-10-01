@@ -21,6 +21,23 @@ export const CAMERA_PRESETS: Record<CameraMode, CameraPreset> = {
   icosahedral_net: { distance: 60.0, height: 0, pitch: 0, fov: 55 },
 };
 
+// Per-view control mapping layer: raw key input (+1/-1) is multiplied by these before
+// driving the character, so each camera view can read A/D and W/S in its own frame.
+// Ground views are verified (chase-camera projection) to read D as a right turn;
+// the net is a reading-order (mirror-image) map, so its turn is flipped.
+export interface ControlMapping {
+  turn: 1 | -1;
+  forward: 1 | -1;
+}
+
+export const CONTROL_MAPPINGS: Record<CameraMode, ControlMapping> = {
+  curved_horizon: { turn: 1, forward: 1 },
+  close_third: { turn: 1, forward: 1 },
+  wide_panoramic: { turn: 1, forward: 1 },
+  orbital_planet: { turn: 1, forward: 1 },
+  icosahedral_net: { turn: -1, forward: 1 },
+};
+
 export class FootstepParticles {
   public mesh: THREE.Points;
   private maxParticles = 60;
@@ -311,23 +328,26 @@ export class SphericalCharacterController {
 
     // 1. Process A / D turning (yaw rotation around characterUp, not lateral strafe)
     const turnRate = 2.8; // radians per second (~160 deg/sec)
-    if (this.input.turn !== 0) {
+    const mapping = CONTROL_MAPPINGS[this.cameraMode];
+    const turnInput = this.input.turn * mapping.turn;
+    const forwardInput = this.input.forward * mapping.forward;
+    if (turnInput !== 0) {
       // Verified via camera projection: with this sign, D (+1) makes the ground-view world
       // sweep screen-left, i.e. a true right turn. (up x forward is the mesh's local +X,
       // which is NOT screen-right from a chase camera, so don't "fix" this against charRight.)
-      const turnAngle = -this.input.turn * turnRate * dt;
+      const turnAngle = -turnInput * turnRate * dt;
       const turnQuat = new THREE.Quaternion().setFromAxisAngle(this.characterUp, turnAngle);
       this.forwardHeading.applyQuaternion(turnQuat).normalize();
-      this.angularTurnSpeed = -this.input.turn * turnRate;
+      this.angularTurnSpeed = -turnInput * turnRate;
     } else {
       this.angularTurnSpeed = 0;
     }
 
     // 2. Process W / S forward & reverse velocity (not lateral)
     let targetSpeed = 0;
-    if (this.input.forward > 0) {
+    if (forwardInput > 0) {
       targetSpeed = this.input.sprint ? this.sprintSpeed : this.walkSpeed;
-    } else if (this.input.forward < 0) {
+    } else if (forwardInput < 0) {
       targetSpeed = -(this.input.sprint ? this.sprintSpeed * 0.7 : this.walkSpeed * 0.65);
     }
     this.currentSpeed = THREE.MathUtils.damp(this.currentSpeed, targetSpeed, 12, dt);
