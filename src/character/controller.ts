@@ -312,11 +312,13 @@ export class SphericalCharacterController {
     // 1. Process A / D turning (yaw rotation around characterUp, not lateral strafe)
     const turnRate = 2.8; // radians per second (~160 deg/sec)
     if (this.input.turn !== 0) {
-      // Turn left (-1) rotates counter-clockwise; Turn right (+1) rotates clockwise
-      const turnAngle = -this.input.turn * turnRate * dt;
+      // Turn right (+1) rotates forwardHeading toward the character's own right side
+      // (up x forward, the same convention used to build the character mesh's basis
+      // below) — verified empirically, not just by the sign here.
+      const turnAngle = this.input.turn * turnRate * dt;
       const turnQuat = new THREE.Quaternion().setFromAxisAngle(this.characterUp, turnAngle);
       this.forwardHeading.applyQuaternion(turnQuat).normalize();
-      this.angularTurnSpeed = -this.input.turn * turnRate;
+      this.angularTurnSpeed = this.input.turn * turnRate;
     } else {
       this.angularTurnSpeed = 0;
     }
