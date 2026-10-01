@@ -123,7 +123,7 @@ export class DGGSPlanet {
   public beacons: BeaconState[] = [];
   public netGroup: THREE.Group;
   public netActiveCellHighlight: THREE.LineLoop;
-  public netTrailLine: THREE.Line;
+  public netTrailLine: THREE.LineSegments;
   private netTrailPoints: THREE.Vector2[] = [];
 
   constructor(radius = 42, depth: number = DEFAULT_DGGS_DEPTH) {
@@ -168,8 +168,9 @@ export class DGGSPlanet {
     this.netGroup.add(this.netTrailLine);
   }
 
-  private buildNetTrailLine(): THREE.Line {
-    const positions = new Float32Array(NET_TRAIL_MAX_POINTS * 3);
+  private buildNetTrailLine(): THREE.LineSegments {
+    // Sized for up to (MAX_POINTS - 1) independent 2-vertex segments.
+    const positions = new Float32Array(NET_TRAIL_MAX_POINTS * 2 * 3);
     const geometry = new THREE.BufferGeometry();
     const posAttr = new THREE.Float32BufferAttribute(positions, 3);
     posAttr.setUsage(THREE.DynamicDrawUsage);
@@ -183,26 +184,42 @@ export class DGGSPlanet {
       depthTest: false,
     });
 
-    const line = new THREE.Line(geometry, material);
+    const line = new THREE.LineSegments(geometry, material);
     line.renderOrder = 9; // under the active-cell highlight (10), above the terrain
     line.frustumCulled = false;
     return line;
   }
 
-  /** Appends one point (net-local, already scaled) to the walking trail, dropping the oldest once full. */
+  /**
+   * Appends one point (net-local, already scaled) to the walking trail, dropping the
+   * oldest once full. Rendered as independent 2-vertex segments rather than one
+   * continuous polyline, and any consecutive pair farther apart than a normal walking
+   * step is simply not connected — that large a jump only happens when the character
+   * crosses one of the net's unavoidable "cut" seams (e.g. Face 4 into Face 0: genuinely
+   * adjacent in 3D, but separate, disconnected flaps once unfolded flat), not from
+   * actually walking there.
+   */
   public appendNetTrailPoint(x: number, y: number) {
     this.netTrailPoints.push(new THREE.Vector2(x, y));
     if (this.netTrailPoints.length > NET_TRAIL_MAX_POINTS) {
       this.netTrailPoints.shift();
     }
 
+    const netScale = this.radius * NET_EDGE_CHORD;
+    const leafEdge = netScale / 2 ** this.dggs.maxDepth;
+    const gapThreshold = leafEdge * 1.5; // well above a normal per-sample step, far below a seam jump
+
     const posAttr = this.netTrailLine.geometry.getAttribute('position') as THREE.BufferAttribute;
-    for (let i = 0; i < this.netTrailPoints.length; i++) {
-      const p = this.netTrailPoints[i];
-      posAttr.setXYZ(i, p.x, p.y, 2.5);
+    let vertCount = 0;
+    for (let i = 1; i < this.netTrailPoints.length; i++) {
+      const a = this.netTrailPoints[i - 1];
+      const b = this.netTrailPoints[i];
+      if (a.distanceTo(b) > gapThreshold) continue;
+      posAttr.setXYZ(vertCount++, a.x, a.y, 2.5);
+      posAttr.setXYZ(vertCount++, b.x, b.y, 2.5);
     }
     posAttr.needsUpdate = true;
-    this.netTrailLine.geometry.setDrawRange(0, this.netTrailPoints.length);
+    this.netTrailLine.geometry.setDrawRange(0, vertCount);
   }
 
   public clearNetTrail() {
