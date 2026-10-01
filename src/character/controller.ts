@@ -23,8 +23,8 @@ export const CAMERA_PRESETS: Record<CameraMode, CameraPreset> = {
 
 // Per-view control mapping layer: raw key input (+1/-1) is multiplied by these before
 // driving the character, so each camera view can read A/D and W/S in its own frame.
-// Ground views are verified (chase-camera projection) to read D as a right turn;
-// the net is a reading-order (mirror-image) map, so its turn is flipped.
+// Every view currently reads A/D and W/S the same way (D = right turn, verified via
+// chase-camera projection; the net is an outside-view map so rotation sense matches).
 export interface ControlMapping {
   turn: 1 | -1;
   forward: 1 | -1;
@@ -35,7 +35,7 @@ export const CONTROL_MAPPINGS: Record<CameraMode, ControlMapping> = {
   close_third: { turn: 1, forward: 1 },
   wide_panoramic: { turn: 1, forward: 1 },
   orbital_planet: { turn: 1, forward: 1 },
-  icosahedral_net: { turn: -1, forward: 1 },
+  icosahedral_net: { turn: 1, forward: 1 },
 };
 
 export class FootstepParticles {

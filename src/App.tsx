@@ -327,7 +327,7 @@ export default function App() {
         setCurrentCell(cell);
 
         const lat = Math.asin(controller.unitPosition.y) * (180 / Math.PI);
-        const lon = Math.atan2(controller.unitPosition.z, controller.unitPosition.x) * (180 / Math.PI);
+        const lon = Math.atan2(-controller.unitPosition.z, controller.unitPosition.x) * (180 / Math.PI);
 
         setTelemetry({
           lat,

@@ -33,9 +33,8 @@ export interface NetTriangle {
 }
 
 // Reading-order layout: faces 0-4 left to right in the top row, 5-9 next, 10-14 next,
-// 15-19 last. Face numbers increase westward on the sphere, so this is a mirror image
-// of the sphere seen from outside (equivalently, the view from inside) — turns read
-// reversed on it, which CONTROL_MAPPINGS.icosahedral_net compensates for.
+// 15-19 last. Face numbers increase eastward on the sphere, so this is the view of the
+// sphere from outside (north up, east right) — same handedness as the 3D cells.
 function baseFaceNetTriangle(faceIndex: number): NetTriangle {
   const band = Math.floor(faceIndex / 5);
   const i = faceIndex % 5;

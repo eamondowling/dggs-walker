@@ -31,11 +31,13 @@ function createBaseIcosahedron(): { vertices: THREE.Vector3[]; faces: [number, n
   const rawVertices: [number, number, number][] = [[0, 1, 0]];
   for (let i = 0; i < 5; i++) {
     const lon = (i * 2 * Math.PI) / 5;
-    rawVertices.push([ringR * Math.cos(lon), ringY, ringR * Math.sin(lon)]);
+    // z = -sin so ring index increases EASTWARD seen from outside with +Y north
+    // (east = Y x r = decreasing atan2(z, x)); +sin would run the numbering westward.
+    rawVertices.push([ringR * Math.cos(lon), ringY, -ringR * Math.sin(lon)]);
   }
   for (let i = 0; i < 5; i++) {
     const lon = (i * 2 * Math.PI) / 5 + Math.PI / 5;
-    rawVertices.push([ringR * Math.cos(lon), -ringY, ringR * Math.sin(lon)]);
+    rawVertices.push([ringR * Math.cos(lon), -ringY, -ringR * Math.sin(lon)]);
   }
   rawVertices.push([0, -1, 0]);
 
@@ -128,7 +130,7 @@ export function getCellPolarCoordinates(faceIndex: number, path: number[]): { la
   const dir = getCellCenterDirection(faceIndex, path);
   return {
     lat: (Math.asin(dir.y) * 180) / Math.PI,
-    lon: (Math.atan2(dir.z, dir.x) * 180) / Math.PI,
+    lon: (Math.atan2(-dir.z, dir.x) * 180) / Math.PI, // east-positive: east = Y x r
   };
 }
 

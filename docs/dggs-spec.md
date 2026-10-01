@@ -116,12 +116,14 @@ vertex table above — beacon *i* is the icosahedron vertex at index *i*:
 structure — it never mirrors at a seam. But two observers standing at
 beacon 1 (north) and beacon 6 (south), each facing *away from their own
 pole* (the natural orientation after just walking down from it), will see
-that same eastward rotation swing to **opposite hands**: at the north,
-walking beacons 1→2→3→4→5 reads as left, left, right, right relative to
-your facing; at the south, walking 6→7→8→9→10 reads as right, right,
-left, left — the mirror image, at the same angles (108°/144°/144°/108°
-from forward, verified against the actual `up`/`forward`/`right`
-vectors the character controller uses).
+that same eastward rotation swing to **opposite hands**: facing away from
+the north pole, the eastward step to the next beacon in a ring reads as
+one hand (to your left, when you face south from the north pole), and
+facing away from the south pole the same eastward step reads as the other
+hand. (The exact turn-by-turn left/right sequence for walking the
+beacons was derived under an earlier, westward-numbered version of the
+geometry and has not been re-derived since the numbering was corrected to
+run eastward.)
 
 This isn't a bug — it's the same reason a clock viewed from behind
 appears to run backwards. Your reference frame (which pole you're facing
@@ -142,13 +144,16 @@ the whole surface the way Mercator or equirectangular projections are.
 
 The net is laid out in reading order: faces 0-4 left to right in the top
 row (north cap), 5-9 in the next row (upper band), 10-14 in the next
-(lower band), and 15-19 in the last (south cap). Because face numbers
-increase westward on the sphere, this layout is a mirror image of the
-sphere seen from outside (verified: every cell's winding in the net is
-opposite to its winding on the sphere), i.e. it reads like the view from
-inside. A left/right turn therefore looks reversed on the map, so the
-net view has its own control mapping (`CONTROL_MAPPINGS` in
-`src/character/controller.ts`) that flips A/D there.
+(lower band), and 15-19 in the last (south cap). Face numbers increase
+eastward on the sphere (face centers sit at longitudes 36°, 108°, 180°,
+-108°, -36° for faces 0-4, and likewise for 5-9; 72° steps, offset 36° for
+the lower bands), so this layout is exactly the view of the sphere from
+outside with north up and east to the right. Verified for every base face
+and a spread of sub-cells: each cell's winding in the net matches its
+winding on the sphere, so rotation senses (left/right turns) agree between
+the net and the 3D views. `CONTROL_MAPPINGS` in
+`src/character/controller.ts` is a per-view hook for A/D and W/S, currently
+identity for every view.
 
 Because the net has no curvature to account for, subdividing it is
 exact plane geometry — no per-level renormalization like the real 3D
