@@ -140,6 +140,14 @@ exact, undistorted flat triangle; the only "distortion" is conceptual,
 at the fold lines between faces, rather than smoothly smeared across
 the whole surface the way Mercator or equirectangular projections are.
 
+The net is drawn as seen from outside the sphere, so it has the same
+handedness as the 3D cells: Face 0 (the north cap face the walker spawns
+on) sits at the right end of the top row, and the faces run right-to-left
+as their numbers increase. A cell's winding in the net matches its winding
+on the sphere viewed from outside (verified for every base face and a
+spread of sub-cells; an earlier version of the layout was a mirror image,
+which made left/right turns read backwards on the map).
+
 Because the net has no curvature to account for, subdividing it is
 exact plane geometry — no per-level renormalization like the real 3D
 cells need. The subdivision step is a direct 2D port of the corrected
