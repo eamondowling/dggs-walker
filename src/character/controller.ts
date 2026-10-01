@@ -312,13 +312,13 @@ export class SphericalCharacterController {
     // 1. Process A / D turning (yaw rotation around characterUp, not lateral strafe)
     const turnRate = 2.8; // radians per second (~160 deg/sec)
     if (this.input.turn !== 0) {
-      // Turn right (+1) rotates forwardHeading toward the character's own right side
-      // (up x forward, the same convention used to build the character mesh's basis
-      // below) — verified empirically, not just by the sign here.
-      const turnAngle = this.input.turn * turnRate * dt;
+      // Verified via camera projection: with this sign, D (+1) makes the ground-view world
+      // sweep screen-left, i.e. a true right turn. (up x forward is the mesh's local +X,
+      // which is NOT screen-right from a chase camera, so don't "fix" this against charRight.)
+      const turnAngle = -this.input.turn * turnRate * dt;
       const turnQuat = new THREE.Quaternion().setFromAxisAngle(this.characterUp, turnAngle);
       this.forwardHeading.applyQuaternion(turnQuat).normalize();
-      this.angularTurnSpeed = this.input.turn * turnRate;
+      this.angularTurnSpeed = -this.input.turn * turnRate;
     } else {
       this.angularTurnSpeed = 0;
     }

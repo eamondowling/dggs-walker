@@ -23,9 +23,8 @@ export const NET_EDGE_CHORD = 1.0514622242382672;
 
 const H = Math.sqrt(3) / 2; // height of a unit equilateral triangle
 
-// Center of the net's bounding box in net-space units (x:[0,5.5], y:[-H,2H]) —
-// use as the camera look-at target so the whole layout frames centered, not off to one side.
-export const NET_LAYOUT_CENTER = new THREE.Vector2(2.75, H / 2);
+// Center of the net's bounding box in net-space units (x:[-5.5,0], y:[-H,2H]).
+export const NET_LAYOUT_CENTER = new THREE.Vector2(-2.75, H / 2);
 
 export interface NetTriangle {
   vertex: THREE.Vector2;
@@ -33,7 +32,18 @@ export interface NetTriangle {
   east: THREE.Vector2;
 }
 
+// The net is laid out as seen from outside the sphere (same handedness as the 3D
+// cells): x is negated from the raw strip layout below, which is a mirror image.
 function baseFaceNetTriangle(faceIndex: number): NetTriangle {
+  const raw = rawBaseFaceNetTriangle(faceIndex);
+  return {
+    vertex: new THREE.Vector2(-raw.vertex.x, raw.vertex.y),
+    west: new THREE.Vector2(-raw.west.x, raw.west.y),
+    east: new THREE.Vector2(-raw.east.x, raw.east.y),
+  };
+}
+
+function rawBaseFaceNetTriangle(faceIndex: number): NetTriangle {
   const band = Math.floor(faceIndex / 5);
   const i = faceIndex % 5;
 
