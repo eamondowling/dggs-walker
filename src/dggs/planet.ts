@@ -16,6 +16,10 @@ const BIOME_TEXTURE_URLS: Record<string, string> = {
 
 const textureLoader = new THREE.TextureLoader();
 
+// Buffer capacity for the local flat patch: tiles with a corner within the fade radius
+// (~2.4 leaf edges) number about 60, so this leaves headroom.
+const LOCAL_PATCH_MAX_TILES = 96;
+
 // Net-view walking trail: caps out after this many recorded points (oldest drop off),
 // enough for a long session (planet circumference is ~264 units at radius 42).
 const NET_TRAIL_MAX_POINTS = 5000;
@@ -131,8 +135,8 @@ export class DGGSPlanet {
   private localPatchMeshes = new Map<string, THREE.Mesh>();
   private localPatchEdges: THREE.LineSegments;
   private localPatchCenterOutline: THREE.LineLoop;
-  private localPatchCenterId = '';
-  private localPatchCells: { cell: DGGSCell; tint: THREE.Color }[] = [];
+  private localPatchTints = new Map<DGGSCell, THREE.Color>();
+  public localPatchTiles: DGGSCell[] = [];
 
   constructor(radius = 42, depth: number = DEFAULT_DGGS_DEPTH) {
     this.radius = radius;
@@ -185,7 +189,7 @@ export class DGGSPlanet {
 
   private buildLocalPatchGroup(): THREE.Group {
     const group = new THREE.Group();
-    const maxVerts = 13 * 3;
+    const maxVerts = LOCAL_PATCH_MAX_TILES * 3;
 
     for (const biomeName of Object.keys(BIOME_TEXTURE_URLS)) {
       const geometry = new THREE.BufferGeometry();
@@ -210,8 +214,8 @@ export class DGGSPlanet {
     }
 
     const edgeGeometry = new THREE.BufferGeometry();
-    edgeGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(13 * 6 * 3), 3));
-    edgeGeometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(13 * 6 * 3), 3));
+    edgeGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(LOCAL_PATCH_MAX_TILES * 6 * 3), 3));
+    edgeGeometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(LOCAL_PATCH_MAX_TILES * 6 * 3), 3));
     edgeGeometry.setDrawRange(0, 0);
     const edges = new THREE.LineSegments(
       edgeGeometry,
@@ -228,47 +232,49 @@ export class DGGSPlanet {
     return group;
   }
 
-  /** Current leaf tile plus every leaf tile sharing at least one corner with it (12, or 11 at a beacon). */
-  private findPatchCells(center: DGGSCell): { cell: DGGSCell; tint: THREE.Color }[] {
-    const result: { cell: DGGSCell; tint: THREE.Color }[] = [];
-    for (const cell of this.dggs.leafCells) {
-      let shares = cell === center;
-      for (let i = 0; i < 3 && !shares; i++) {
-        for (let j = 0; j < 3; j++) {
-          if (cell.vertices[i].distanceToSquared(center.vertices[j]) < 1e-5) {
-            shares = true;
-            break;
-          }
-        }
-      }
-      if (!shares) continue;
-
-      // Same per-cell tint as the sphere terrain, so a tile keeps its look in both views.
-      const biome = getBiomeForNormal(cell.normal);
+  /** Same per-cell tint as the sphere terrain, so a tile keeps its look in both views. */
+  private getPatchTint(cell: DGGSCell): THREE.Color {
+    let tint = this.localPatchTints.get(cell);
+    if (!tint) {
       const hash = Math.sin(cell.faceIndex * 133.7 + (cell.path[0] || 0) * 17.3 + (cell.path[1] || 0) * 7.1) * 0.04;
-      result.push({ cell, tint: biome.color.clone().offsetHSL(hash, 0, hash) });
+      tint = getBiomeForNormal(cell.normal).color.clone().offsetHSL(hash, 0, hash);
+      this.localPatchTints.set(cell, tint);
     }
-    return result;
+    return tint;
   }
 
   /**
-   * Re-flattens the patch around the character's exact position every frame, using an
-   * azimuthal-equidistant projection onto the tangent plane there: each patch corner
+   * Re-flattens the ground around the character's exact position every frame, using an
+   * azimuthal-equidistant projection onto the tangent plane there: each tile corner
    * keeps its true geodesic distance and bearing from the character. The 5-valent
    * beacon corners need no special case — the 5 tiles around one genuinely span 360°,
    * so they come out fatter in angle (72° vs 60°) automatically.
+   *
+   * Which tiles are drawn is decided purely by distance (any tile with a corner inside
+   * the fade radius), roughly the current tile plus the ring of 12 around it. Choosing
+   * them by "shares a corner with the current tile" instead made tiles pop in and out at
+   * full opacity every time the current tile changed; by distance, a tile only starts
+   * being drawn when its nearest corner is at alpha 0.
    */
   public updateLocalPatch(unitPos: THREE.Vector3, centerCell: DGGSCell) {
     if (!this.localPatchGroup.visible) return;
-    if (centerCell.id !== this.localPatchCenterId) {
-      this.localPatchCenterId = centerCell.id;
-      this.localPatchCells = this.findPatchCells(centerCell);
-    }
 
     const R = this.radius;
     const leafEdge = (R * NET_EDGE_CHORD) / 2 ** this.dggs.maxDepth;
-    const fadeStart = leafEdge * 1.0;
-    const fadeEnd = leafEdge * 2.2;
+    const fadeStart = leafEdge * 1.2;
+    const fadeEnd = leafEdge * 2.4;
+
+    const cosMax = Math.cos(fadeEnd / R);
+    const tiles = this.localPatchTiles;
+    tiles.length = 0;
+    for (const cell of this.dggs.leafCells) {
+      const v = cell.vertices;
+      if (unitPos.dot(v[0]) >= cosMax || unitPos.dot(v[1]) >= cosMax || unitPos.dot(v[2]) >= cosMax) {
+        tiles.push(cell);
+        if (tiles.length >= LOCAL_PATCH_MAX_TILES) break;
+      }
+    }
+
     const base = unitPos.clone().multiplyScalar(R);
     const lift = unitPos.clone().multiplyScalar(0.06);
 
@@ -288,9 +294,10 @@ export class DGGSPlanet {
     const edgeCol = this.localPatchEdges.geometry.getAttribute('color') as THREE.BufferAttribute;
     let edgeVerts = 0;
 
-    for (const { cell, tint } of this.localPatchCells) {
+    for (const cell of tiles) {
       const mesh = this.localPatchMeshes.get(cell.biome);
       if (!mesh) continue;
+      const tint = this.getPatchTint(cell);
       const geom = mesh.geometry;
       const posAttr = geom.getAttribute('position') as THREE.BufferAttribute;
       const nrmAttr = geom.getAttribute('normal') as THREE.BufferAttribute;
@@ -343,7 +350,6 @@ export class DGGSPlanet {
   public setLocalPatchActive(active: boolean) {
     this.localPatchGroup.visible = active;
     if (!active) return;
-    this.localPatchCenterId = '';
     this.terrainGroup.visible = false;
     for (const lines of this.wireframeLayers) lines.visible = false;
     this.activeCellHighlight.visible = false;

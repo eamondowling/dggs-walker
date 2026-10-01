@@ -175,21 +175,30 @@ icosahedron kits.
 
 ## Local flat patch ("Local Flat" camera mode)
 
-A close-3rd-style chase view of flat ground made of the current depth-3 tile plus
-every tile sharing at least one corner with it: 3 edge-neighbors + 9 corner-only
-neighbors = 12 surrounding tiles (13 with the current one). It is rebuilt every
-frame by an azimuthal-equidistant projection onto the plane tangent to the sphere
-at the character's exact position, so each corner keeps its true geodesic distance
-and bearing from the character, and nothing jumps when the current tile changes
-(only which tiles are included does, at the faded outer edge).
+A close-3rd-style chase view of flat ground around the current depth-3 tile. The
+core of it is the tile plus the ring of tiles sharing a corner with it (3
+edge-neighbors + 9 corner-only neighbors = 12 surrounding tiles, 13 in all). It is
+rebuilt every frame by an azimuthal-equidistant projection onto the plane tangent to
+the sphere at the character's exact position, so each corner keeps its true geodesic
+distance and bearing from the character, and nothing jumps when the current tile
+changes.
+
+Which tiles are drawn is decided by distance, not by that ring: any tile with a
+corner within ~2.4 leaf-edges of the character is drawn (about 37-54 tiles), fading
+from full opacity at ~1.2 edges to transparent at ~2.4. Selecting exactly the 13
+corner-sharing tiles made tiles pop in and out at full opacity whenever the current
+tile changed; with the distance rule a tile only starts being drawn when its nearest
+corner is fully transparent (measured entry/exit alpha <= 0.04 over a 600-step walk
+across 7 faces).
 
 The 12 base vertices (beacons) need no special rule: only 5 tiles meet there
 instead of 6, so the 5 tiles around one subtend ~72° each in the patch instead of
 ~60° (verified: 71.8-72.2°, summing to 360°), and a tile that has a beacon as a
-corner has 11 surrounding tiles instead of 12. This applies to 60 of the 1,280
-depth-3 tiles. Beacons are hidden in this view, and the patch is flat while the
-sphere curves away, so tiles far from the character are slightly distorted;
-the outer ring fades out.
+corner has 11 corner-sharing neighbors instead of 12. This applies to 60 of the
+1,280 depth-3 tiles. Beacons are hidden in this view, and the patch is flat while
+the sphere curves away, so tiles far from the character are slightly distorted
+(the ground drifts by up to ~0.1 units per walking step near the faded edge) —
+the fade hides most of it.
 
 ## Adjacency graph
 
