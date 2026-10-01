@@ -46,6 +46,10 @@ Then open `http://localhost:3000`.
 **Controls:** W/S forward-back, A/D turn, drag mouse to orbit the camera, wheel to
 zoom, Space to jump.
 
+**Gamepad (Xbox / standard mapping):** left stick or d-pad to move and turn, right
+stick to orbit the camera (pan in Net View), A to jump, RT to sprint, LB/RB to zoom
+out/in. Press any button once so the browser detects the controller.
+
 ## Stack
 
 React 19, Three.js, TypeScript, Vite, Tailwind CSS.

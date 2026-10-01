@@ -7,6 +7,11 @@ import { SphericalCharacterController, CameraMode } from './character/controller
 import { DGGSCell, DEFAULT_DGGS_DEPTH } from './dggs/icosahedron';
 import { DGGSOverlay } from './components/DGGSOverlay';
 import { soundEngine } from './audio/sound';
+import { readGamepad } from './input/gamepad';
+
+// Right-stick look and bumper zoom, expressed as the equivalent mouse-drag / wheel pixels per second.
+const GAMEPAD_LOOK_PX_PER_SEC = 500;
+const GAMEPAD_ZOOM_PX_PER_SEC = 400;
 
 const TOTAL_ACHIEVEMENTS = 1;
 
@@ -281,10 +286,21 @@ export default function App() {
         turn += joystickThumbRef.current.x;
       }
 
+      // Gamepad (Xbox etc.): left stick / d-pad move, right stick orbits (or pans in net view), bumpers zoom
+      const pad = readGamepad();
+      if (pad.connected) {
+        f += pad.forward;
+        turn += pad.turn;
+        if (pad.lookX !== 0 || pad.lookY !== 0) {
+          controller.handlePointerMove(pad.lookX * GAMEPAD_LOOK_PX_PER_SEC * delta, pad.lookY * GAMEPAD_LOOK_PX_PER_SEC * delta);
+        }
+        if (pad.zoom !== 0) controller.handleWheel(pad.zoom * GAMEPAD_ZOOM_PX_PER_SEC * delta);
+      }
+
       controller.input.forward = THREE.MathUtils.clamp(f, -1, 1);
       controller.input.turn = THREE.MathUtils.clamp(turn, -1, 1);
-      controller.input.sprint = activeKeys.has('ShiftLeft') || activeKeys.has('ShiftRight');
-      controller.input.jump = activeKeys.has('Space');
+      controller.input.sprint = activeKeys.has('ShiftLeft') || activeKeys.has('ShiftRight') || pad.sprint;
+      controller.input.jump = activeKeys.has('Space') || pad.jump;
 
       // Update controller & physics
       controller.update(delta);
